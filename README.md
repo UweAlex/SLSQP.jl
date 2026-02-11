@@ -329,7 +329,74 @@ Analysis of the original Kraft Fortran code, NLopt C-port, SciPy port, and relat
 
 ### 0.2 – Numerical Constants & Tolerances Table
 - Extract all hard-coded numerical values, tolerances, and thresholds.  
-- Output: Table with columns: Parameter, Value, Source (with line/reference), Purpose, Sensitivity/Notes.  
+- Output: Table with columns: Parameter, Value, Source (with line/reference), Purpose, Sensitivity/Notes.
+
+### Phase 0.2 – Numerical Constants & Tolerances Table  
+**Version:** 1.3 (improved, categorized & consolidated)  
+**Status:** Freeze-ready after forensics  
+
+**Approach**  
+- Primary sources: NLopt `slsqp.c` (main reference), SciPy `slsqp_opt.f` + Python wrapper, Kraft DFVLR-FB 88-28 (original intent).  
+- Method: Manual extraction + cross-check with SciPy test suite & NLopt issues.  
+- Improvements:  
+  - Categorized into 3 blocks for clarity (core, termination, safety).  
+  - Added missing "ghost constants" (curvature safeguard, activation threshold, and line-search factors).  
+  - Added interaction matrix (small, 8 entries) to show dependencies.  
+  - Noted SciPy vs NLopt divergences with "Reference Mode" suggestion (strict_nlopt / strict_scipy for testing).  
+- Criteria: Only values influencing termination, feasibility, damping, or stability; Julia notes for adaptation (e.g. eps(T)).  
+
+#### A. Algorithm Core Parameters (not changeable until Phase 4)
+These are mathematical invariants – do not override.
+
+| #  | Parameter        | Default Value | Source / Location                  | Purpose / Usage                                      | Sensitivity / Julia Note                                                                 |
+|----|------------------|---------------|------------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------------|
+| 1  | `rho_init`       | 1.0          | Kraft p. 12 + slsqp.c              | Initial L1 penalty parameter                         | Medium; dynamic increase. Julia: Keep fixed.                                             |
+| 2  | `rho_factor`     | 10.0         | slsqp.c (typisch)                  | Multiplier for penalty increase                      | High; aggressiveness factor. SciPy sometimes 100 – note in 0.6.                          |
+| 3  | `theta_lim`      | 0.2          | Powell 1978 + slsqp.c BFGS-damping | Threshold for damped BFGS update                     | High; prevents negative curvature. Julia: Keep fixed.                                    |
+| 4  | `sigma`          | 0.1          | Kraft p. 14 + SciPy backtracking   | Contraction factor in line search (Armijo)           | Medium; step *= sigma on failure. Classic range 0.1–0.5.                                |
+| 5  | `eta`            | 0.01         | Kraft / NLopt Armijo-Goldstein     | Sufficient decrease parameter                        | High; Armijo condition: f(x+αd) ≤ f(x) + ηα ∇f·d. Julia: Keep fixed.                    |
+
+#### B. Termination & User-Facing Controls (user-overridable)
+These can be parameters in the API.
+
+| #  | Parameter          | Default Value | Source / Location                  | Purpose / Usage                                      | Sensitivity / Julia Note                                                                 |
+|----|--------------------|---------------|------------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------------|
+| 6  | `acc` / `ACC`      | 1.0e-6        | SciPy wrapper + slsqp_opt.f        | General convergence accuracy / termination tol       | High; SciPy 1e-6 vs NLopt 1e-8 (divergence risk). Julia: User-option + relative scaling. |
+| 7  | `maxiter`          | 1000 or 3*n   | slsqp.c + Kraft                    | Maximum major iterations                             | Low; NLopt 1000, SciPy 100*n. Julia: User-default 3*n.                                  |
+| 8  | `maxfun`           | 1000 or 10*n  | slsqp_opt.f & NLopt                | Maximum function evaluations                         | Low; Prevents loops. Julia: User-default 10*n.                                           |
+| 9  | `ftol_rel` / `abs` | 1e-8 / 1e-10  | NLopt & SciPy termination          | Relative / absolute objective change                 | High; Termination if |f_k - f_{k-1}| < ftol_rel * |f| + ftol_abs. Julia: eps(T)-scaled. |
+| 10 | `xtol_rel` / `abs` | 1e-8 / 1e-10  | NLopt & SciPy termination          | Relative / absolute variable change                  | High; Termination if ||x_k - x_{k-1}|| < xtol_rel * ||x|| + xtol_abs. Julia: eps(T).   |
+| 11 | `constr_viol_tol`  | 1e-8          | Kraft & NLopt feasibility          | Acceptable constraint violation after step           | High; Often same as tol. Julia: eps(T)-scaled.                                           |
+
+#### C. Numerical Safety Guards (adaptable in Julia)
+These are numerical protections – can be Julia-optimized.
+
+| #  | Parameter            | Default Value | Source / Location                  | Purpose / Usage                                      | Sensitivity / Julia Note                                                                 |
+|----|----------------------|---------------|------------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------------|
+| 12 | `eps` / `EPS`        | ~1e-7..1e-8   | slsqp.c (machine eps impl)         | Rank detection, zero checks, singular matrix         | High; Not fixed! Julia: Use `sqrt(eps(T))` or `eps(T)` (Float64 ~1e-8).                  |
+| 13 | `w_tol` (NNLS dual)  | 1e-8          | slsqp.c + Lawson-Hanson            | Dual feasibility in NNLS (w_max <= w_tol → optimal)  | High; Affects active-set decisions. Julia: eps(T).                                       |
+| 14 | `alpha_min`          | 1e-10         | slsqp.c line search                | Minimum step size (backtracking abort)               | Low; Prevents underflow. Julia: nextfloat(zero(T)).                                      |
+| 15 | `tiny` / `small`     | 1e-30..1e-40  | slsqp_opt.f + slsqp.c              | Lower bound for divisions / denominators             | Low; NaN/Inf safety. Julia: `eps(T)^2`.                                                  |
+| 16 | `curvature_guard`    | 1e-10         | Powell + slsqp.c BFGS              | Absolute threshold for BFGS skip (if s'y < guard)    | Medium; Prevents bad updates. Julia: eps(T).                                             |
+| 17 | `activation_thresh`  | eps or 0      | Lawson-Hanson + slsqp.c            | Constraint activation (if abs(x) < thresh → active)  | High; Often <=0 or <eps. Julia: eps(T).                                                  |
+
+### Interaction Matrix (small, as suggested)
+Shows direct dependencies between parameters (critical for understanding divergences).
+
+| Interaction               | Effect / Interplay                                 | Sensitivity / Note |
+|---------------------------|----------------------------------------------------|--------------------|
+| `acc ↔ constr_viol_tol`   | Feasible termination (viol < constr_viol_tol)      | High; SciPy vs NLopt differ – reference mode needed |
+| `eps ↔ rank test`         | QP solvability (if abs(r) < eps*norm(A) → singular)| High; Affects degenerate constraints |
+| `rho_init ↔ eta`          | Step rejection (sufficient decrease in merit)      | Medium; Armijo interacts with penalty |
+| `theta_lim ↔ curvature_guard` | BFGS skip frequency (s'y < guard or < theta_lim) | High; Prevents ill-conditioned B |
+| `w_tol ↔ tol`             | NNLS → overall convergence (dual tol feeds KKT)    | High; Often same value |
+| `alpha_min ↔ tiny`        | Line search abort (step < alpha_min → fail)        | Low; Numerical safety net |
+| `maxiter ↔ maxfun`        | Early termination (if maxfun reached first)        | Low; Protects expensive functions |
+| `ftol_rel ↔ xtol_rel`     | Balanced stop (objective vs variable change)       | Medium; User-overridable |
+
+**End of Phase 0.2.**  
+
+
 - Status: Pending – next immediate step.
 
 ### 0.3 – High-Level Julia-like Pseudocode
