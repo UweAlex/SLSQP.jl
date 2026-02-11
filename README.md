@@ -402,7 +402,308 @@ Shows direct dependencies between parameters (critical for understanding diverge
 ### 0.3 – High-Level Julia-like Pseudocode
 - Create simplified, Julia-style pseudocode representations of the main control flows.  
 - Focus: Overall SQP loop, NNLS outer/inner loop, QP → LDP → NNLS transformation.  
-- Output: 3–5 annotated pseudocode blocks (Markdown).  
+- Output: 3–5 annotated pseudocode blocks (Markdown).
+
+# Phase 0.3 – High-Level Julia-like Pseudocode
+
+**Status: Final (forensic baseline)**
+**Zweck:** Kontrollfluss-Extraktspezifikation ohne Implementierungsdetails
+**Scope:** Reine Reproduktion von Kraft/NLopt/SciPy
+
+Referenzanker:
+
+* Dieter Kraft
+* NLopt
+* SciPy
+* Solving Least Squares Problems
+* Michael J. D. Powell
+
+---
+
+# 0.3.1 – Main SQP Loop
+
+### (mit Null-Problem-Degradation & präzisem Termination-Check)
+
+```julia
+function slsqp_solve!(ws::SLSQPWorkspace, problem, options)
+
+    initialize_workspace!(ws, problem, options)
+
+    k = 0
+    while true
+        k += 1
+
+        evaluate_objective_and_gradient!(ws, problem)
+        evaluate_constraints!(ws, problem)
+
+        # --- Termination BEFORE QP build ---
+        # Must include:
+        # - Objective change (ftol)
+        # - Step norm (xtol)
+        # - Constraint violation (constr_viol_tol)
+        # - KKT residual (via multipliers if available)
+        if check_convergence(ws, options)
+            return SUCCESS
+        end
+
+        # --- Null-Problem Handling ---
+        if ws.m_eq + ws.m_ineq == 0
+            # Pure quasi-Newton degradation
+            ws.d .= -ws.B \ ws.g
+            ws.qp_success = true
+        else
+            build_qp_subproblem!(ws)
+            solve_qp_via_nnls!(ws)
+
+            if !ws.qp_success
+                return QP_FAIL
+            end
+        end
+
+        α = line_search!(ws, problem, options)
+
+        if α < ws.alpha_min
+            return LINESEARCH_FAIL
+        end
+
+        ws.x_new .= ws.x .+ α .* ws.d
+
+        update_multipliers_and_penalty!(ws)
+        update_hessian!(ws)
+
+        ws.x .= ws.x_new
+
+        if k > ws.max_iter || ws.nfev > ws.max_fun
+            return MAXITER_REACHED
+        end
+    end
+end
+```
+
+### Forensic Guarantees
+
+* Termination erfolgt **vor** QP-Build (wie in Kraft/NLopt).
+* Null-Constraint-Fall degeneriert zu reinem BFGS.
+* Kein künstlicher Dummy-Constraint.
+* Iterationszähler startet bei 1.
+
+---
+
+# 0.3.2 – QP → LDP → NNLS Transformation
+
+### (mit deterministischer Singularitäts-Absicherung)
+
+```julia
+function solve_qp_via_nnls!(ws::SLSQPWorkspace)
+
+    form_constraint_matrices!(ws)
+
+    # --- Hessian factorization ---
+    success, rank = factorize_hessian!(ws.B)
+
+    if !success || rank < ws.n
+        regularize_hessian!(ws)   # minimal eps-scaled diagonal perturbation
+    end
+
+    build_ldp_system!(ws)
+    build_nnls_system!(ws)
+
+    nnls_solve!(ws.nnls_ws)
+
+    if !ws.nnls_ws.success
+        ws.qp_success = false
+        return
+    end
+
+    recover_primal_direction!(ws)
+    recover_duals!(ws)
+
+    ws.qp_success = true
+end
+```
+
+### Forensic Präzisierungen
+
+* Rank-Test ist eps-skaliert.
+* Regularisierung ist minimal & deterministisch.
+* Kein Trust-Region-Fallback.
+* Primal-Recovery muss Division durch kleine Werte absichern.
+
+---
+
+# 0.3.3 – Lawson–Hanson NNLS (Active-Set Originalstruktur)
+
+```julia
+function nnls_solve!(ws::NNLSWorkspace)
+
+    initialize_passive_active_sets!(ws)   # P = ∅, Z = all
+
+    while true   # Outer loop
+
+        compute_dual!(ws)   # w = A' r
+
+        if maximum(ws.w[ws.Z]) ≤ ws.w_tol
+            ws.success = true
+            return
+        end
+
+        t = argmax(ws.w[ws.Z])
+        move_to_passive!(ws, t)
+
+        solve_restricted_ls!(ws)
+
+        while any(ws.x_passive .< 0)
+
+            α = compute_boundary_step!(ws)
+
+            ws.x .+= α .* (ws.x_new .- ws.x)
+
+            move_zeroed_to_active!(ws)   # min-index tie-break
+
+            solve_restricted_ls!(ws)
+        end
+    end
+end
+```
+
+### Invarianten (explizit gesichert)
+
+* Residuum nimmt monoton ab.
+* Aktive-Mengen-Änderungen sind endlich.
+* Boundary-Step verhindert Zyklisierung.
+* Kein Interior-Point.
+* Kein Pivot-Redesign.
+
+---
+
+# 0.3.4 – Merit Function & Line Search
+
+### (Armijo mit L1-Merit)
+
+```julia
+merit(ws) = ws.f + ws.rho * sum(abs, ws.c)
+```
+
+```julia
+function line_search!(ws, problem, options)
+
+    α = 1.0
+    merit0 = merit(ws)
+
+    while true
+
+        trial_x = ws.x .+ α .* ws.d
+        evaluate_trial!(ws, trial_x, problem)
+
+        if merit(ws) ≤ merit0 + ws.eta * α * dot(ws.g, ws.d)
+            return α
+        end
+
+        α *= ws.sigma
+
+        if α < ws.alpha_min
+            return α
+        end
+    end
+end
+```
+
+### Forensic Merkmale
+
+* Reines Armijo (kein Wolfe).
+* `eta` und `sigma` aus Phase 0.2.
+* Merit-Funktion ist L1-basiert.
+* Keine adaptiven Line-Search-Heuristiken.
+
+---
+
+# 0.3.5 – Multiplier & Penalty Update
+
+### (Maratos-Guard)
+
+```julia
+function update_multipliers_and_penalty!(ws)
+
+    ws.lambda .= ws.lambda_qp
+
+    lambda_max = norm(ws.lambda, Inf)
+
+    if lambda_max > ws.rho
+        ws.rho = ws.rho_factor * (lambda_max + 0.01)
+    end
+end
+```
+
+### Forensischer Zweck
+
+* ρ dominiert Multiplikatoren.
+* Verhindert Maratos-bedingte Step-Rejections.
+* Deterministisch.
+* Keine adaptive Penalty-Strategie.
+
+---
+
+# 0.3.6 – Damped BFGS (Powell-Modifikation)
+
+```julia
+function update_hessian!(ws)
+
+    s = ws.x_new .- ws.x
+    y = ws.g_new .- ws.g
+
+    sy = dot(s, y)
+
+    if sy < ws.curvature_guard
+        return   # skip update
+    end
+
+    sBs = dot(s, ws.B * s)
+
+    if sy < ws.theta_lim * sBs
+        θ = (1 - ws.theta_lim) * sBs / (sBs - sy)
+        y = θ * y + (1 - θ) * (ws.B * s)
+    end
+
+    bfgs_update!(ws.B, s, y)
+end
+```
+
+### Forensic Sicherungen
+
+* Absolute curvature guard.
+* Relative damping mit θ.
+* Positive Definiteness bleibt erhalten.
+* Exakte Powell-Struktur.
+* Kein SR1, kein alternatives Update.
+
+---
+
+# Phase 0.3 – Final Integrity Check
+
+Abgedeckt:
+
+✔ Null-Problem-Degradation
+✔ QP-Singularität + minimal Regularisierung
+✔ NNLS Active-Set Originalstruktur
+✔ L1-Merit + Armijo
+✔ Deterministischer Maratos-Guard
+✔ Powell-damped BFGS
+✔ Pre- und Post-Termination-Logik
+
+Nicht enthalten:
+
+✘ AD-Dispatch
+✘ Sparse Support
+✘ Alternative QP Backends
+✘ Trust-Region
+✘ Modernisierung
+
+---
+
+# Phase 0.3 – Status
+
+**Final.**
+
 - Status: Pending.
 
 ### 0.4 – Decision Logic & Exit Conditions
