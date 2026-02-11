@@ -356,4 +356,3 @@ end
 **End of Phase 0.5.**
 
 
-**Phase 0.1 – Document Final** ist hiermit abgeschlossen.
