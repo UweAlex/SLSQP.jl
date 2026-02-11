@@ -309,7 +309,7 @@ SLSQP is the end product. Intermediate products are intentionally crafted buildi
 24. **Parallel-QR in SQP (2025)**
 * [ACM Euro-Par 2025](https://dl.acm.org/doi/10.1007/978-3-031-99872-0_15)
 * **Description:** Research on accelerating the sub-problems using parallel linear algebra. Relevant for scaling the solver to larger dimensions.
-
+**End of Phase 0.1.**
 
 
 ---
