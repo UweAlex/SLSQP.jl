@@ -150,8 +150,21 @@ This project follows a clear order:
 SLSQP is the end product. Intermediate products are intentionally crafted building blocks. Innovation begins only after secured equivalence.
 
 ---
+# SLSQP.jl – Strategic Development Paper
 
+## Phase 0 – Reference Forensics
 
+**Overall Goal:**  
+Secure an exact, unambiguous algorithmic specification of SLSQP as the foundation for faithful reproduction.
+
+**Scope:**  
+Analysis of the original Kraft Fortran code, NLopt C-port, SciPy port, and related primary sources.
+
+**Sub-phases (structured & sequential):**
+
+### 0.1 – Reference Archive & Cartography
+- Collect and organize all relevant primary sources, papers, code repositories, and documentation.  
+- Output: Comprehensive Master Reference List (currently version 9.0).  
 # 🧭 Phase 0.1 – Document Final: THE SLSQP CARTOGRAPHY
 
 **Strategic Master Reference List 9.0 (Comprehensive Version)**
@@ -312,8 +325,31 @@ SLSQP is the end product. Intermediate products are intentionally crafted buildi
 **End of Phase 0.1.**
 
 
----
+- Status: Completed.
 
+### 0.2 – Numerical Constants & Tolerances Table
+- Extract all hard-coded numerical values, tolerances, and thresholds.  
+- Output: Table with columns: Parameter, Value, Source (with line/reference), Purpose, Sensitivity/Notes.  
+- Status: Pending – next immediate step.
+
+### 0.3 – High-Level Julia-like Pseudocode
+- Create simplified, Julia-style pseudocode representations of the main control flows.  
+- Focus: Overall SQP loop, NNLS outer/inner loop, QP → LDP → NNLS transformation.  
+- Output: 3–5 annotated pseudocode blocks (Markdown).  
+- Status: Pending.
+
+### 0.4 – Decision Logic & Exit Conditions
+- Document all conditional branches, mode switches, exit codes, and reset conditions.  
+- Output: Table or structured list (Condition → Action → Source → Meaning).  
+- Status: Pending.
+
+### 0.5 – Pathologies Mapping + First Draft of Architecture
+- Map known failure modes, instabilities, and edge cases from literature and implementations.  
+- Simultaneously produce the first rough architecture proposal (Proposal 1.0).  
+- Output:  
+  - Short pathologies table (Problem → Symptom → Original handling → Reference)  
+  - Architecture Proposal 1.0 (very slim draft: product line, workspace sketch, principles)
+  - 
 ## Phase 0.5 – First Draft of Architecture
 **Architecture Proposal 1.0 (Preliminary Sketch)**  
 **Status:** Preliminary first draft — created after Phase 0.1  
@@ -354,5 +390,22 @@ end
 - No new algorithms or features before Phase 4
 
 **End of Phase 0.5.**
+- Status: Architecture draft created (Phase 0.5 section already available).
+
+### 0.6 – Go/No-Go & Phase 0 Closure
+- Summarize all outputs from 0.1–0.5.  
+- Evaluate readiness for Phase 1 (CoreNNLS).  
+- Output: Final Phase 0 Report (Markdown/PDF) + explicit Go/No-Go decision.  
+- Status: Pending – final checkpoint of Phase 0.
+
+**Phase 0 Duration Estimate:** 2–4 weeks (pragmatic execution).  
+**Success Criterion for Phase 0:**  
+We have a complete, traceable foundation that allows faithful reproduction without guessing.
+
+
+
+
+---
+
 
 
