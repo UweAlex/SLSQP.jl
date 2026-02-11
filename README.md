@@ -314,8 +314,46 @@ SLSQP is the end product. Intermediate products are intentionally crafted buildi
 
 ---
 
-### Forensisches Fazit
+## Phase 0.5 – First Draft of Architecture
+**Architecture Proposal 1.0 (Preliminary Sketch)**  
+**Status:** Preliminary first draft — created after Phase 0.1  
+**Purpose:** Provide rough direction; to be validated and refined in Phase 1
 
-Wir haben nun **24 autoritative Quellen** (19 ursprüngliche + 3 neue + 2 ergänzende Dimensionen) lückenlos dokumentiert. Dieses Konvolut deckt die gesamte Zeitspanne von 1974 bis 2026 ab.
+### 1. Overall Structure (very high-level)
+
+- Package name (provisional): **SLSQP.jl**  
+- Primary goal: a faithful SLSQP solver  
+- Planned independent modules (in order of development):  
+  1. **CoreNNLS.jl** (Phase 1 – universally reusable)  
+  2. **QPTransform.jl** (Phase 2)  
+  3. **SLSQP.jl** (Phase 3 – integration of the above)
+
+### 2. Central Architectural Idea (the only fixed element so far)
+
+All modules will share a **mutable workspace pattern** to enable zero-allocation loops and type stability.
+
+**Preliminary conceptual workspace outline (sketch only – not final):**
+
+```julia
+struct SLSQPWorkspace{T<:AbstractFloat}
+    x::Vector{T}           # current point
+    g::Vector{T}           # gradient
+    c::Vector{T}           # constraints
+    lambda::Vector{T}      # multipliers
+    B::Matrix{T}           # Hessian approximation
+    d::Vector{T}           # search direction
+    # ... to be extended later
+end
+```
+
+### 3. Core Guiding Principles (short & unchanged)
+
+- Reproduction before innovation  
+- In-place operations and type-generic design from the start  
+- SciMLBase-compatible (`AbstractOptimizer`)  
+- No new algorithms or features before Phase 4
+
+**End of Phase 0.5.**
+
 
 **Phase 0.1 – Document Final** ist hiermit abgeschlossen.
