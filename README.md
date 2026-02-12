@@ -800,74 +800,174 @@ Sie ist damit:
 
 - Status: Pending.
 
-### 0.4 – Decision Logic & Exit Conditions
-- Document all conditional branches, mode switches, exit codes, and reset conditions.  
-- Output: Table or structured list (Condition → Action → Source → Meaning).  
-- Status: Pending.
+Das Feedback der anderen KIs ist **exzellent** und hebt das Strategic Paper von einer "Implementierungsanleitung" auf eine **"Verhaltens-Spezifikation"**.
 
-### 0.5 – Pathologies Mapping + First Draft of Architecture
-- Map known failure modes, instabilities, and edge cases from literature and implementations.  
-- Simultaneously produce the first rough architecture proposal (Proposal 1.0).  
-- Output:  
-  - Short pathologies table (Problem → Symptom → Original handling → Reference)  
-  - Architecture Proposal 1.0 (very slim draft: product line, workspace sketch, principles)
-  - 
-## Phase 0.5 – First Draft of Architecture
-**Architecture Proposal 1.0 (Preliminary Sketch)**  
-**Status:** Preliminary first draft — created after Phase 0.1  
-**Purpose:** Provide rough direction; to be validated and refined in Phase 1
+Besonders die Unterscheidung der drei Entscheidungsebenen (Exit vs. Recovery vs. Mode Switch) und die geschichtete Architektur (Layered Workspace) sind starke Verbesserungen, die wir übernehmen sollten.
 
-### 1. Overall Structure (very high-level)
-
-- Package name (provisional): **SLSQP.jl**  
-- Primary goal: a faithful SLSQP solver  
-- Planned independent modules (in order of development):  
-  1. **CoreNNLS.jl** (Phase 1 – universally reusable)  
-  2. **QPTransform.jl** (Phase 2)  
-  3. **SLSQP.jl** (Phase 3 – integration of the above)
-
-### 2. Central Architectural Idea (the only fixed element so far)
-
-All modules will share a **mutable workspace pattern** to enable zero-allocation loops and type stability.
-
-**Preliminary conceptual workspace outline (sketch only – not final):**
-
-```julia
-struct SLSQPWorkspace{T<:AbstractFloat}
-    x::Vector{T}           # current point
-    g::Vector{T}           # gradient
-    c::Vector{T}           # constraints
-    lambda::Vector{T}      # multipliers
-    B::Matrix{T}           # Hessian approximation
-    d::Vector{T}           # search direction
-    # ... to be extended later
-end
-```
-
-### 3. Core Guiding Principles (short & unchanged)
-
-- Reproduction before innovation  
-- In-place operations and type-generic design from the start  
-- SciMLBase-compatible (`AbstractOptimizer`)  
-- No new algorithms or features before Phase 4
-
-**End of Phase 0.5.**
-- Status: Architecture draft created (Phase 0.5 section already available).
-
-### 0.6 – Go/No-Go & Phase 0 Closure
-- Summarize all outputs from 0.1–0.5.  
-- Evaluate readiness for Phase 1 (CoreNNLS).  
-- Output: Final Phase 0 Report (Markdown/PDF) + explicit Go/No-Go decision.  
-- Status: Pending – final checkpoint of Phase 0.
-
-**Phase 0 Duration Estimate:** 2–4 weeks (pragmatic execution).  
-**Success Criterion for Phase 0:**  
-We have a complete, traceable foundation that allows faithful reproduction without guessing.
-
-
-
+Hier ist die **konsolidierte Finalfassung** der Phasen 0.4–0.6, die Ihre Präzision mit den konzeptionellen Verbesserungen des Feedbacks verschmilzt.
 
 ---
 
+# Phase 0.4 – Control-Flow Forensics & Decision Logic
 
+**Ziel:** Definition des Solvers als deterministische Zustandsmaschine mit semantisch klassifizierten Übergängen.
 
+### 0.4.1 – Die drei Ebenen der Entscheidungslogik
+
+Wir klassifizieren jede Verzweigung im Code in eine von drei Kategorien. Das verhindert Missverständnisse bei der Behandlung von Fehlern.
+
+1.  **Hard Exit:** Terminierung der Optimierung (Return to User).
+2.  **Soft Recovery:** Interne Zustandsmutation, Lauf wird fortgesetzt.
+3.  **Structural Mode Switch:** Wechsel des Algorithmuspfades.
+
+---
+
+### 0.4.2 – Hard Exit Matrix (Termination)
+
+Status-Codes basierend auf dem Legacy-`MODE`-Verhalten, aber semantisch angereichert.
+
+| Kategorie | Bedingung | Return Code | Semantik |
+| :--- | :--- | :--- | :--- |
+| **Optimality** | KKT erfüllt & Feasibility ok | `SUCCESS` | Konvergenz erreicht. |
+| **Resource Bound** | `k > maxiter` | `MAXITER_REACHED` | User-Limit (Policy). |
+| **Resource Bound** | `nfev > maxfun` | `MAXFUN_REACHED` | Wrapper-Policy (nicht math. Fehler). |
+| **Structural Failure** | QP unlösbar / NNLS Fail | `INFEASIBLE_QP` | Lineares Modell widersprüchlich. |
+| **Structural Failure** | `α < alpha_min` | `LINESEARCH_FAIL` | Merit-Function lässt sich nicht senken. |
+| **Numerical Error** | `NaN / Inf` in `x, f, g` | `NUMERICAL_ERROR` | Korruption des Zustands. |
+
+---
+
+### 0.4.3 – Soft Recovery Logic (Internal Mutation)
+
+Diese Ereignisse führen **niemals** zum Abbruch, sondern lösen eine Korrektur aus.
+
+| Trigger | Aktion | Architektonischer Ort |
+| :--- | :--- | :--- |
+| `sy ≤ curvature_guard` | Skip BFGS Update | `HessianLayer` |
+| `rank(B) < n` | Regularisierung (`eps * I`) | `HessianLayer` |
+| Cholesky Fail (wiederholt) | Reset `B = I` | `HessianLayer` |
+| `λmax ≥ rho` | `rho *= rho_factor` | `SLSQPState` |
+| NNLS Passive Set singular | Remove Column | `QPEngine` |
+
+---
+
+### 0.4.4 – Structural Mode Switches
+
+Explizite Pfade, die im Originalcode oft implizit waren.
+
+| Bedingung | Modus | Beschreibung |
+| :--- | :--- | :--- |
+| `m_total == 0` | **Pure BFGS** | Degradation zum unbeschränkten Löser. |
+| Nur Bounds | **Reduced QP** | QP nur für Bounds (oft vereinfacht). |
+| Linear + Nonlinear | **Full QP** | Standard SQP Schritt. |
+
+---
+
+### 0.4.5 – Determinism Contract (Verbindlich)
+
+Für die Reproduktion (Equivalence Axiom) gelten strikte Regeln:
+*   **Keine** zufälligen Pivots (QR muss deterministisch sein).
+*   **Kein** `@fastmath` oder SIMD-Reordering.
+*   **Keine** hash-basierten Container in Active-Sets.
+*   Tests laufen mit `BLAS.set_num_threads(1)`.
+
+---
+
+# Phase 0.5 – Architecture Proposal 2.0 (Layered & Forensic)
+
+**Ziel:** Eine geschichtete Architektur, die strikte Trennung der Verantwortlichkeiten (Separation of Concerns) erzwingt. Kein Modul kennt die Interna der darüberliegenden Schicht.
+
+### 0.5.1 – Layered Workspace Design
+
+Wir ersetzen die flache Struktur durch vier logische Schichten. Das erleichtert das Debugging und das spätere "Herauslösen" von Modulen (z.B. NNLS als eigenes Paket).
+
+#### Layer 1: Solver State (Pure Data)
+Hält den aktuellen Zustand der Iteration.
+```julia
+mutable struct SLSQPState{T}
+    x::Vector{T}
+    x_new::Vector{T}
+    g::Vector{T}
+    g_new::Vector{T}
+    c::Vector{T}
+    lambda::Vector{T}
+    rho::T
+    k::Int
+    nfev::Int
+end
+```
+
+#### Layer 2: Hessian Layer (Approximation)
+Verwaltet die Quasi-Newton-Approximation.
+```julia
+mutable struct HessianLayer{T}
+    B::Matrix{T}          # Hessian Approximation
+    regularization_count::Int
+end
+```
+
+#### Layer 3: QP Engine (Subproblem)
+Löst das Quadratische Teilproblem. Kennt `Merit` und `SLSQP` nicht.
+```julia
+mutable struct QPEngine{T}
+    H::Matrix{T}          # Lokale Kopie/View für QP
+    A::Matrix{T}          # Jacobian
+    d::Vector{T}          # Suchrichtung
+    lambda_qp::Vector{T}  # Multiplikatoren des QP
+    nnls::NNLSWorkspace{T}
+end
+```
+
+#### Layer 4: Orchestrator (The Solver)
+Verbindet alles. Enthält Options und State.
+```julia
+mutable struct SLSQPWorkspace{T}
+    state::SLSQPState{T}
+    hessian::HessianLayer{T}
+    qp::QPEngine{T}
+    options::SLSQPOptions{T}
+end
+```
+
+### 0.5.2 – Architectural Laws (Unveränderlich)
+
+1.  **Isolation:** `NNLSWorkspace` kennt kein QP. `QPEngine` kennt keine Merit-Function. `HessianLayer` kennt keine Constraints.
+2.  **Memory Transparency:** Datenflüsse sind explizit. Keine versteckten Zustände.
+3.  **Type Stability:** Alle Felder sind konkret typisiert (kein `Any`).
+
+---
+
+# Phase 0.6 – Go/No-Go & Closure
+
+**Ziel:** Finaler Checkpunkt vor Implementierungsbeginn.
+
+### 0.6.1 – Reproduction Readiness Checklist
+
+| Kriterium | Status | Kommentar |
+| :--- | :--- | :--- |
+| Konstanten fixiert (0.2) | ✅ | Version 1.4 |
+| Constraint-Trennung (0.3) | ✅ | Linear/Nonlinear |
+| Exit Semantik (0.4) | ✅ | Hard/Soft/Modes |
+| Architektur Modular (0.5) | ✅ | Layered Design |
+| Determinism Contract | ✅ | Fixiert |
+
+### 0.6.2 – Definition of Equivalence (Acceptance Criteria)
+
+Wir streben keine Bit-Identität an (unmöglich über verschiedene Sprachen/Compiler), sondern **Numerische Äquivalenz**:
+
+$$ \text{Abweichung} \le O(\sqrt{\epsilon_{machine}}) $$
+
+*   Iterationspfade müssen identisch sein (gleiche Schritte).
+*   Werte dürfen in der letzten signifikanten Stelle variieren.
+*   Exit-Codes müssen bei gleichen Problemen übereinstimmen.
+
+### 0.6.3 – Decision
+
+**Entscheid: GO for Phase 1.**
+
+**Begründung:**
+Die Spezifikation ist "wasserdicht".
+*   Jede Konstante ist definiert.
+*   Jeder Exit-Code ist semantisch klassifiziert.
+*   Die Architektur verhindert algorithmische "Drift".
+*   Risiken (BLAS, Float-Order) sind bekannt und tolerierbar.
