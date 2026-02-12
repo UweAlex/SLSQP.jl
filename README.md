@@ -165,167 +165,208 @@ Analysis of the original Kraft Fortran code, NLopt C-port, SciPy port, and relat
 ### 0.1 – Reference Archive & Cartography
 - Collect and organize all relevant primary sources, papers, code repositories, and documentation.  
 - Output: Comprehensive Master Reference List (currently version 9.0).  
-# 🧭 Phase 0.1 – Document Final: THE SLSQP CARTOGRAPHY
 
-**Strategic Master Reference List 9.0 (Comprehensive Version)**
-**Status:** Total Dimensional Capture Completed – No Omissions.
+# 🧭 Phase 0.1 – THE SLSQP STRATEGIC CARTOGRAPHY (Expanded Reconciliation Edition)
 
----
+**Version:** 13.5 – Final Corrected  
+**Date:** February 12, 2026  
+**Status:** All 28 unique references reconciled and numbered sequentially (1–28). No omissions. No duplicate numbering.
 
-## I. Mathematical Foundations & Primary Sources
-
-*The theoretical "Ground Truth." These documents explain the 'why' behind the numerical choices.*
-
-1. **Kraft, D. (1988): A Software Package for Sequential Quadratic Programming**
-* [DFVLR-FB 88-28 PDF](http://degenerateconic.com/uploads/2018/03/DFVLR_FB_88_28.pdf)
-* **Description:** The foundational specification. It describes the LDP (Least Distance Programming) transformation and the L1-merit function. This is the ultimate reference for the core algorithm's mathematical intent.
-
-
-2. **Netlib TOMS 733: The Original Kraft Code (1994)**
-* [Official ACM TOMS 733 (Netlib)](https://www.netlib.org/toms/733)
-* **Description:** The official ACM registration. By downloading the `tar.gz`, we obtain the **purest form of the 1988/1994 code**, untouched by SciPy or NLopt modifications. It is the forensic baseline for memory work-arrays.
-
-
-3. **Kraft, D. (1994): TOMP—Fortran modules for optimal control**
-* [ACM TOMS Link](https://dl.acm.org/doi/10.1145/192115.192124)
-* **Description:** An extension of SLSQP into optimal control contexts. It illustrates how the algorithm was modularized in Fortran to handle structured constraints in robotics.
-
-
-4. **Lawson, C. L. & Hanson, R. J. (1974/1995): Solving Least Squares Problems**
-* [SIAM Classics](https://epubs.siam.org/doi/book/10.1137/1.9781611971217)
-* **Description:** The fundamental text for the NNLS (Non-Negative Least Squares) sub-problem. It provides the proof for the active-set mechanics and the anti-cycling rules that prevent infinite loops.
-
-
-5. **Powell, M. J. D. (1978): A Fast Algorithm for Nonlinearly Constrained Optimization**
-* [Lecture Notes](https://link.springer.com/chapter/10.1007/BFb0067703)
-* **Description:** The origin of the Damped BFGS update. This paper explains how to maintain a positive definite Hessian approximation even when the objective is not globally convex.
-
-
-6. **Schittkowski, K. (1982): On the convergence of SQP methods**
-* [Mathematical Programming Study 18](https://link.springer.com/book/10.1007/978-3-642-48320-2)
-* **Description:** A deep dive into the augmented Lagrangian line search function used in SQP. It provides the convergence proofs that justify Kraft's merit function choices.
-
-
-7. **Bemporad, A. (2016): A Non-Negative Least Squares Algorithm for QP**
-* [ArXiv 1510.06202](https://arxiv.org/abs/1510.06202)
-* **Description:** A modern analysis showing how general QPs can be solved as NNLS problems. This is a crucial link for making Phase 2 (QP-subproblem) numerically robust.
-
-
+This document defines the authoritative cartography of sources governing the faithful reconstruction and controlled evolution of SLSQP.
 
 ---
 
-## II. Reference Implementations (The Evolution of Code)
+# LEVEL R — RECONSTRUCTION REFERENCE
 
-*How the theory was translated into different languages. Essential for the "Despaghettisierung".*
+*(Binding for Phases 0–3. All numerical behavior and control flow must trace back exclusively to these sources.)*
 
-8. **Jacob Williams: Modern Fortran SLSQP (2008+)**
-* [GitHub - jacobwilliams/slsqp](https://github.com/jacobwilliams/slsqp)
-* **Description:** This is a modernized, object-oriented re-implementation of the Kraft code. It is **extremely valuable** because it shows a structured approach to the legacy code, helping us map Fortran work-arrays to modern Julia types.
-
-
-9. **NLopt: slsqp.c (The C Reference)**
-* [GitHub Source](https://github.com/stevengj/nlopt/blob/master/src/algs/slsqp/slsqp.c)
-* **Description:** Steven G. Johnson’s C-port. This is the most widely used version in the Julia ecosystem today. It contains vital fixes for uninitialized variables found in the original Fortran.
-
-
-10. **SciPy: slsqp_opt.f (The Python Engine)**
-* [GitHub Source](https://github.com/scipy/scipy/blob/master/scipy/optimize/slsqp/slsqp_opt.f)
-* **Description:** The version used by millions of Python users. Analyzing the Python-to-Fortran wrapper (`slsqp.pyf`) shows how the community handles user-defined tolerances.
-
-
-11. **Relf: Rust SLSQP**
-* [GitHub relf/slsqp](https://github.com/relf/slsqp)
-* **Description:** A Rust implementation generated via `c2rust` from NLopt. It serves as a benchmark for how other safe languages have handled the porting process.
-
-
-12. **PySLSQP (2024): Transparent Logging**
-* [GitHub Yosef-Guevara/PySLSQP](https://github.com/Yosef-Guevara/PySLSQP)
-* **Description:** A modern Python wrapper focused on visibility. It allows extracting merit function values and constraint violations at every iteration—features we want to build into SLSQP.jl by default.
-
-
+This level defines the canonical DNA of SLSQP.  
+No modernization, reinterpretation, or structural deviation is permitted during reconstruction.
 
 ---
 
-## III. The Julia Ecosystem (Integration Points)
+## R1 — Mathematical Foundations (The Immutable Core)
 
-*Where our new solver will live and what it will use.*
+**1. Dieter Kraft (1988)**  
+*A Software Package for Sequential Quadratic Programming* (DFVLR-FB 88-28)  
+[PDF (Stable Mirror)](http://degenerateconic.com/uploads/2018/03/DFVLR_FB_88_28.pdf)  
+**Role:** Foundational mathematical specification.  
+**Binding for:** L1 merit function, QP → LDP transformation, penalty parameter logic.
 
-13. **NonNegLeastSquares.jl (v0.5.0, 2026)**
-* [GitHub JuliaLinearAlgebra](https://github.com/JuliaLinearAlgebra/NonNegLeastSquares.jl)
-* **Description:** The most up-to-date Julia implementation of NNLS with **Automatic Differentiation (AD) support**. This is a likely candidate for our Phase 1 foundation.
+**2. Netlib – TOMS 733 (1994)**  
+[Netlib Archive](https://netlib.org/toms/733)  
+**Role:** Original Fortran implementation.  
+**Binding for:** Work-array layout, memory indexing, MODE return codes, major/minor loop structure.
 
+**3. Dieter Kraft (1994): TOMP — Fortran modules for optimal control**  
+[ACM TOMS DOI](https://dl.acm.org/doi/10.1145/192115.192124)  
+**Role:** Modular extension of SLSQP.  
+**Binding for:** Structured constraints handling.
 
-14. **NNLS.jl (rdeits)**
-* [GitHub rdeits/NNLS.jl](https://github.com/rdeits/NNLS.jl)
-* **Description:** An older, battle-tested Julia port of the Lawson-Hanson code. Valuable for cross-checking numerical consistency with legacy results.
+**4. Charles L. Lawson & Richard J. Hanson (1974/1995)**  
+*Solving Least Squares Problems*  
+[SIAM Classics](https://epubs.siam.org/doi/book/10.1137/1.9781611971217)  
+**Role:** NNLS algorithm (Chapter 23).  
+**Binding for:** Active-set mechanics, dual feasibility tests, anti-cycling safeguards.
 
+**5. Michael J. D. Powell (1978)**  
+*A Fast Algorithm for Nonlinearly Constrained Optimization Calculations*  
+[Springer DOI](https://doi.org/10.1007/BFb0067703)  
+**Role:** Damped BFGS update mechanism.  
+**Binding for:** `theta_lim` safeguard, curvature condition handling, positive definiteness maintenance.
 
-15. **Optimization.jl (SciML)**
-* [GitHub SciML/Optimization.jl](https://github.com/SciML/Optimization.jl)
-* **Description:** The primary interface. Our solver must implement the `AbstractOptimizer` traits defined here to ensure community adoption.
+**6. Klaus Schittkowski (1983)**  
+*On the Convergence of a Sequential Quadratic Programming Method with an Augmented Lagrangian Line Search Function*  
+[ResearchGate PDF](https://www.researchgate.net/publication/233116651_On_the_convergence_of_a_sequential_quadratic_programming_method_with_an_augmented_Lagrangian_line_search_function)  
+**Role:** Convergence analysis.  
+**Binding for:** Theoretical justification of global convergence strategy.
 
-
-16. **NLPModels.jl (JuliaSmoothOptimizers)**
-* [GitHub JSO](https://github.com/JuliaSmoothOptimizers/NLPModels.jl)
-* **Description:** Standardized modeling infrastructure. Integrating with JSO allows us to use their extensive benchmarking tools.
-
-
-17. **SqpSolver.jl (Exanauts)**
-* [GitHub exanauts/SqpSolver.jl](https://github.com/exanauts/SqpSolver.jl)
-* **Description:** A different Julia-based SQP approach. Studying their code helps us identify "Julia-native" pitfalls in SQP implementation.
-
-
-
----
-
-## IV. Testing, Benchmarks & Pathologies
-
-*The "Judges." How we prove our implementation is correct.*
-
-18. **SciPy SLSQP Test Suite (Numerical Benchmarks)**
-* [GitHub test_slsqp.py](https://github.com/scipy/scipy/blob/main/scipy/optimize/tests/test_slsqp.py)
-* **Description:** **Critical Reference.** This contains explicit comparison tests against known Hock-Schittkowski solutions. We will use these to verify numerical equivalence in Phase 3.
-
-
-19. **Hock-Schittkowski Collection (HS)**
-* [HS Test Problems](http://www.ai7.uni-bayreuth.de/test_problems.htm)
-* **Description:** The gold standard for nonlinear optimization testing. 306 problems with documented optimal solutions.
-
-
-20. **I-SLSQP (2024): Improved SLSQP**
-* [ArXiv 2402.10396](https://arxiv.org/abs/2402.10396)
-* **Description:** Recent research highlighting stability fixes for the dual-to-primal recovery. Essential for our Phase 5 "Modernization" goals.
-
-
-21. **The Maratos Effect (Failure Case)**
-* [Wikipedia Background](https://en.wikipedia.org/wiki/Maratos_effect)
-* **Description:** A theoretical "trap" where SQP steps are rejected despite being good. We need this to test the robustness of our merit function logic.
-
-
-22. **NLopt Issue Tracker (SLSQP label)**
-* [GitHub NLopt Issues](https://www.google.com/search?q=https://github.com/stevengj/nlopt/issues%3Fq%3Dis%253Aissue%2Bslsqp)
-* **Description:** Real-world error reports. Provides a list of edge cases (e.g., singular constraints) that we must handle more gracefully than the C-version.
-
-
+**7. Alberto Bemporad (2016)**  
+*A Quadratic Programming Algorithm Based on Nonnegative Least Squares With Applications to Embedded Model Predictive Control*  
+[IEEE TAC PDF](http://cse.lab.imtlucca.it/~bemporad/publications/papers/ieeetac-qpnnls.pdf)  
+**Role:** Robust QP-to-NNLS linkage.  
+**Binding for:** Phase 2 transformation stability.
 
 ---
 
-## V. Advanced Dimensions (AD & Hardware)
+## R2 — Reference Implementations (Forensic Cross-Validation)
 
-*Future-proofing for Phase 4 and 5.*
+**8. Jacob Williams: Modern Fortran SLSQP (2008–present)**  
+[GitHub – jacobwilliams/slsqp](https://github.com/jacobwilliams/slsqp)  
+**Role:** Object-oriented refactoring reference.  
+**Status:** Structural clarity reference.
 
-23. **Enzyme.jl (High-Performance AD)**
-* [Enzyme Documentation](https://www.google.com/search?q=https://enzyme.mit.edu/julia/)
-* **Description:** Necessary for differentiating through the mutating, in-place code we will write for SLSQP.jl.
+**9. NLopt: slsqp.c (C Reference)**  
+[GitHub Source](https://github.com/stevengj/nlopt/blob/master/src/algs/slsqp/slsqp.c)  
+**Role:** Stability fixes and edge-case handling.  
+**Status:** Secondary forensic comparator.
 
+**10. SciPy: SLSQP Fortran Core and Python Wrapper**  
+[GitHub Source – _slsqp.py](https://github.com/scipy/scipy/blob/main/scipy/optimize/_slsqp.py)  
+**Role:** Tolerance semantics and convergence defaults.  
+**Status:** Behavioral validation target.
 
-24. **Parallel-QR in SQP (2025)**
-* [ACM Euro-Par 2025](https://dl.acm.org/doi/10.1007/978-3-031-99872-0_15)
-* **Description:** Research on accelerating the sub-problems using parallel linear algebra. Relevant for scaling the solver to larger dimensions.
-**End of Phase 0.1.**
+**11. relf/slsqp: Rust Port via c2rust**  
+[GitHub – relf/slsqp](https://github.com/relf/slsqp)  
+**Role:** Memory-safe translation benchmark.  
+**Status:** Optional cross-validation for porting issues.
 
+**12. PySLSQP (2024–present): Transparent Python Package**  
+[GitHub – anugrahjo/PySLSQP](https://github.com/anugrahjo/PySLSQP)  
+**Role:** Logging and diagnostics wrapper.  
+**Status:** Inspiration for Phase 5 diagnostics.
 
-- Status: Completed.
+---
+
+## R3 — Validation & Benchmark Authority
+
+**13. Hock–Schittkowski Test Collection (HS 1–306)**  
+[Official PDF](http://klaus-schittkowski.de/test_problems.pdf)  
+**Role:** Numerical equivalence and degeneracy tests.  
+**Status:** Binding for Phase 3 validation.
+
+**14. SciPy SLSQP Test Suite**  
+[GitHub – test_slsqp.py](https://github.com/scipy/scipy/blob/main/scipy/optimize/tests/test_slsqp.py)  
+**Role:** Regression validation.  
+**Status:** Binding for regression testing.
+
+---
+
+## 🔒 Reconstruction Axiom
+
+During Phases 0–3:  
+- No algorithmic reinterpretation  
+- No sparse reformulation  
+- No AD integration  
+- No merit-function redesign  
+
+Every non-trivial numerical decision must be traceable to a documented reference in LEVEL R.
+
+---
+
+# LEVEL E — EVOLUTION REGISTER
+
+*(Non-binding. Strategic outlook for Phase 5 and beyond. Must not influence reconstruction decisions.)*
+
+---
+
+## E1 — Stability Extensions
+
+**15. OpenSQP (2025): Reconfigurable Open-Source SQP in Python**  
+[arXiv 2512.05392](https://arxiv.org/abs/2512.05392)  
+**Purpose:** Reconfigurable variants for robustness.
+
+**16. I-SLSQP (2024): Improved SLSQP with Stability Fixes**  
+[arXiv 2402.10396](https://arxiv.org/abs/2402.10396)  
+**Purpose:** Dual-to-primal recovery enhancements.
+
+---
+
+## E2 — Performance & Scalability
+
+**17. Efficient Task Graph Scheduling for Parallel QR Factorization in SLSQP (2025)**  
+[arXiv 2506.09463](https://arxiv.org/abs/2506.09463)  
+**Purpose:** Parallel QR for speedup.
+
+---
+
+## E3 — Automatic Differentiation Pathways
+
+**18. Enzyme.jl – High-performance automatic differentiation**  
+[GitHub – EnzymeAD/Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl)  
+**Purpose:** Mutating code differentiation (relevant for differentiating the solver itself).
+
+---
+
+## E4 — Julia Ecosystem Integration
+
+**19. NonNegLeastSquares.jl**  
+[GitHub – JuliaLinearAlgebra](https://github.com/JuliaLinearAlgebra/NonNegLeastSquares.jl)  
+**Purpose:** NNLS with AD potential (Candidate for Phase 1 foundation).
+
+**20. NNLS.jl (Rob Deits)**  
+[GitHub – rdeits/NNLS.jl](https://github.com/rdeits/NNLS.jl)  
+**Purpose:** Lawson–Hanson port (Supplemental cross-check to #19).
+
+**21. Optimization.jl (SciML ecosystem)**  
+[GitHub – SciML/Optimization.jl](https://github.com/SciML/Optimization.jl)  
+**Purpose:** Unified interface (Target for Phase 4 integration).
+
+**22. NLPModels.jl (JuliaSmoothOptimizers)**  
+[GitHub – JuliaSmoothOptimizers/NLPModels.jl](https://github.com/JuliaSmoothOptimizers/NLPModels.jl)  
+**Purpose:** Modeling and benchmarks.
+
+**23. SqpSolver.jl**  
+[GitHub – exanauts/SqpSolver.jl](https://github.com/exanauts/SqpSolver.jl)  
+**Purpose:** Alternative SQP implementation reference.
+
+**24. Nonconvex.jl**  
+[GitHub – JuliaNonconvex/Nonconvex.jl](https://github.com/JuliaNonconvex/Nonconvex.jl)  
+**Purpose:** Non-convex toolbox (Supplemental).
+
+**25. Optim.jl**  
+[GitHub – JuliaNLSolvers/Optim.jl](https://github.com/JuliaNLSolvers/Optim.jl)  
+**Purpose:** Unconstrained optimization complements.
+
+---
+
+## E5 — Pathologies & Testing Extensions
+
+**26. The Maratos Effect**  
+[Wikipedia Entry](https://en.wikipedia.org/wiki/Maratos_effect)  
+**Purpose:** Merit function robustness test.
+
+**27. NLopt SLSQP Issue Tracker**  
+[GitHub Issues – search “slsqp”](https://github.com/stevengj/nlopt/issues?q=is%3Aissue+is%3Aopen+slsqp)  
+**Purpose:** Real-world edge cases.
+
+**28. Fast and Robust Least Squares / Curve Fitting in Julia (JuliaCon 2025)**  
+[YouTube Video](https://www.youtube.com/watch?v=mdcCjaYSNNc)  
+**Purpose:** Stable fitting techniques relevant to SLSQP sub-problems.
+
+---
+
+# End of Phase 0.1 (Corrected English Edition)
 
 # Phase 0.2 – Numerical Constants & Tolerances Table
 
