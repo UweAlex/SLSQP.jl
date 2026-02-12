@@ -1,4 +1,5 @@
-# Strategic Paper 
+
+# Strategic Paper
 
 ## SLSQP.jl – Reproduction as Foundation, Product Line as Structure
 
@@ -163,8 +164,6 @@ Analysis of the original Kraft Fortran code, NLopt C-port, SciPy port, and relat
 **Sub-phases (structured & sequential):**
 
 ### 0.1 – Reference Archive & Cartography
-- Collect and organize all relevant primary sources, papers, code repositories, and documentation.  
-- Output: Comprehensive Master Reference List (currently version 9.0).  
 
 # 🧭 Phase 0.1 – THE SLSQP STRATEGIC CARTOGRAPHY (Expanded Reconciliation Edition)
 
@@ -366,25 +365,9 @@ Every non-trivial numerical decision must be traceable to a documented reference
 
 ---
 
-# End of Phase 0.1 (Corrected English Edition)
+# End of Phase 0.1
 
-Das ist ein sehr guter Vorschlag der anderen KI. Die Struktur ist sauber, die Sprache professionell und die Dual-Layer-Logik (Level R vs. Level E) wurde korrekt übernommen.
-
-Allerdings gibt es **zwei kritische Punkte**, die wir korrigieren müssen, bevor wir das Dokument "einfrieren":
-
-1.  **Widerspruch `rho_init`:**
-    In Ihrem Pseudocode (Phase 0.3.1) haben wir `rho = options.rho0` mit dem Kommentar `# Reference default = 10.0` festgelegt.
-    In der Tabelle hier steht `rho_init = 1.0`.
-    *Korrektur:* Wir müssen **10.0** nehmen, um mit NLopt/SciPy (die es fast immer mit 10 initialisieren) und unserem Pseudocode konsistent zu sein. 1.0 ist der theoretische Wert aus dem Paper, aber 10.0 ist die "Production Reality".
-
-2.  **Formatierungsfehler in den Tabellen:**
-    Die Tabellen in dem Vorschlag haben einige "kaputte" Pipes (`|`) und leere Spalten, die vermutlich beim Kopieren entstanden sind (z.B. `| λ |` oder `| |`). Das muss für das README bereinigt werden.
-
-Hier ist die **finale, bereinigte Version**, die wir in das Repository übernehmen können.
-
----
-
-# 🧭 Phase 0.2 – Numerical Constants & Tolerances Table
+### 0.2 – Numerical Constants & Tolerances Table
 
 **Version:** 3.2 – Final Consolidated  
 **Status:** Forensic-complete and frozen for reconstruction.  
@@ -434,14 +417,15 @@ This phase documents the numerical "DNA" of SLSQP. Following the Dual-Layer stan
 
 ## R3 — Numerical Safety Guards
 
-| Parameter           | Value             | Source        | Role / Description                                                        |
-| ------------------- | ----------------- | ------------- | ------------------------------------------------------------------------- |
-| `eps_machine`       | machine epsilon   | C impl        | Floating-point epsilon for zero detection; Julia: `eps(T)`.               |
-| `eps_rank`          | ~sqrt(eps)        | slsqp.c usage | Rank detection in QR/Cholesky (~1.49e-8 for Float64). Distinct from eps.  |
-| `w_tol`             | 1e-8              | NNLS          | Dual feasibility tolerance in NNLS ($\max(w_Z) \le \text{tol}$).          |
-| `activation_thresh` | eps               | Lawson-Hanson | Threshold for constraint activation.                                      |
-| `tiny`              | 1e-30             | slsqp_opt.f   | Lower bound for divisions to prevent underflow.                           |
-| `B_reset_tol`       | ~1e-14 (implicit) | NLopt         | Reset Hessian $B$ to Identity if positive definiteness is lost.           |
+| Parameter             | Value             | Source        | Role / Description                                                        |
+| --------------------- | ----------------- | ------------- | ------------------------------------------------------------------------- |
+| `eps_machine`         | machine epsilon   | C impl        | Floating-point epsilon for zero detection; Julia: `eps(T)`.               |
+| `eps_rank`            | ~sqrt(eps)        | slsqp.c usage | Rank detection in QR/Cholesky (~1.49e-8 for Float64). Distinct from eps.  |
+| `w_tol`               | 1e-8              | NNLS          | Dual feasibility tolerance in NNLS ($\max(w_Z) \le \text{tol}$).          |
+| `activation_thresh`   | eps               | Lawson-Hanson | Threshold for constraint activation.                                      |
+| `tiny`                | 1e-30             | slsqp_opt.f   | Lower bound for divisions to prevent underflow.                           |
+| `B_reset_tol`         | ~1e-14 (implicit) | NLopt         | Reset Hessian $B$ to Identity if positive definiteness is lost.           |
+| `max_curvature_fails` | 3                 | NLopt impl    | Threshold to reset Hessian B to I after repeated curvature violations.    |
 
 ---
 
@@ -477,7 +461,7 @@ This phase documents the numerical "DNA" of SLSQP. Following the Dual-Layer stan
     *   `eps_rank`: Linear algebra stability ($\sigma < \epsilon_{rank} \implies \text{rank-deficient}$), typically $\sqrt{\epsilon_{machine}}$. Must be separate.
 
 2.  **BFGS Reset (Essential Guard):**
-    Reset $B$ to $I$ if: Cholesky fails or curvature conditions repeatedly violated. Level R: mandatory fallback.
+    Reset $B$ to $I$ if: Cholesky fails or curvature conditions repeatedly violated (`max_curvature_fails`). Level R: mandatory fallback.
 
 3.  **NNLS Boundary Ratio Tolerance:**
     $$ \alpha = \min(x_i / (x_i - x_{\text{new}, i})) $$
@@ -504,6 +488,8 @@ Phase 0.2 is **forensically complete and foundational**.
 
 *   **Status:** Ready for Phase 0.3 integration.
 
+---
+
 # Phase 0.3 – Revision 6 (The Final Specification)
 
 **Status:** Finalized & Audited.
@@ -513,7 +499,6 @@ Phase 0.2 is **forensically complete and foundational**.
 
 # 0.3.0 – Constraint Classification Strategy
 
-*(Unverändert – Strategisch korrekt)*
 1.  **Bounds**: $x_{lb} \le x \le x_{ub}$
 2.  **Linear**: $A_{lin} x = b_{lin}$
 3.  **Nonlinear**: $c(x) = 0$
@@ -540,7 +525,7 @@ function slsqp_solve!(ws::SLSQPWorkspace, problem, options)
     end
 
     # --- Penalty Initialization ---
-    # Phase 0.2: Default 1.0 (Kraft Paper)
+    # Phase 0.2: Default 10.0 (NLopt/SciPy Production Reality)
     ws.rho = options.rho_init 
 
     k = 0
@@ -600,8 +585,7 @@ function slsqp_solve!(ws::SLSQPWorkspace, problem, options)
         # --- 6. BFGS Update (On Lagrangian Gradient) ---
         # DESIGN DECISION: We use λ_new for the new gradient.
         # y = ∇L(x_new, λ_new) - ∇L(x_old, λ_old)
-        # This is consistent with standard SQP theory for approximating 
-        # the Hessian of the Lagrangian using updated multiplier estimates.
+        # This is consistent with standard SQP theory.
         ws.grad_L_new .= ws.g .+ ws.jacobian' * ws.lambda
         
         update_hessian!(ws)
@@ -615,41 +599,35 @@ end
 ---
 
 # 0.3.2 – QP Build & Transformation
-
-*(Unverändert)*
+*(Specification as per Revision 4)*
 
 ---
 
 # 0.3.3 – QP → LDP → NNLS
-
-*(Unverändert)*
+*(Specification as per Revision 4)*
 
 ---
 
 # 0.3.4 – Lawson–Hanson NNLS
-
-*(Unverändert – Revision 5 war korrekt)*
-*Verwendet `argmax` über `ws.w[ws.Z]` für konsistentes Lawson-Hanson Verhalten. Julia's `argmax` bricht Ties deterministisch (erster Index), was die Spezifikation erfüllt.*
+*(Uses `argmax` for selection, deterministic tie-breaking)*
 
 ---
 
 # 0.3.5 – Merit Function & Line Search
-
-*(Unverändert – Revision 5 war ehrlich und korrekt)*
-*Nutzung der vereinfachten Richtungsableitung (`dot(g, d)`), dokumentiert als "Implementation-faithful simplification".*
+*(Uses simplified directional derivative consistent with NLopt)*
 
 ---
 
 # 0.3.6 – Multiplier & Penalty Update
-
-*(Unverändert)*
+*(Standard update logic)*
 
 ---
 
 # 0.3.7 – Damped BFGS (On Lagrangian Hessian)
 
 **Korrektur:**
-*   Expliziter Reset auf Identitätsmatrix der Dimension $n$ (vermeidet `UniformScaling`-Unklarheiten).
+*   Expliziter Reset auf Identitätsmatrix der Dimension $n$.
+*   Nutzung von `max_curvature_fails`.
 
 ```julia
 function update_hessian!(ws)
@@ -693,81 +671,53 @@ function update_hessian!(ws)
 end
 ```
 
+---
+
 # Phase 0.4 – Control-Flow Forensics & Decision Logic
 
-**Ziel:** Definition des Solvers als deterministische Zustandsmaschine mit semantisch klassifizierten Übergängen.
+**Ziel:** Definition des Solvers als deterministische Zustandsmaschine.
 
 ### 0.4.1 – Die drei Ebenen der Entscheidungslogik
 
-Wir klassifizieren jede Verzweigung im Code in eine von drei Kategorien. Das verhindert Missverständnisse bei der Behandlung von Fehlern.
-
-1.  **Hard Exit:** Terminierung der Optimierung (Return to User).
-2.  **Soft Recovery:** Interne Zustandsmutation, Lauf wird fortgesetzt.
+1.  **Hard Exit:** Terminierung (Return to User).
+2.  **Soft Recovery:** Interne Zustandsmutation (Lauf wird fortgesetzt).
 3.  **Structural Mode Switch:** Wechsel des Algorithmuspfades.
 
----
-
 ### 0.4.2 – Hard Exit Matrix (Termination)
-
-Status-Codes basierend auf dem Legacy-`MODE`-Verhalten, aber semantisch angereichert.
 
 | Kategorie | Bedingung | Return Code | Semantik |
 | :--- | :--- | :--- | :--- |
 | **Optimality** | KKT erfüllt & Feasibility ok | `SUCCESS` | Konvergenz erreicht. |
 | **Resource Bound** | `k > maxiter` | `MAXITER_REACHED` | User-Limit (Policy). |
-| **Resource Bound** | `nfev > maxfun` | `MAXFUN_REACHED` | Wrapper-Policy (nicht math. Fehler). |
+| **Resource Bound** | `nfev > maxfun` | `MAXFUN_REACHED` | Wrapper-Policy. |
 | **Structural Failure** | QP unlösbar / NNLS Fail | `INFEASIBLE_QP` | Lineares Modell widersprüchlich. |
 | **Structural Failure** | `α < alpha_min` | `LINESEARCH_FAIL` | Merit-Function lässt sich nicht senken. |
 | **Numerical Error** | `NaN / Inf` in `x, f, g` | `NUMERICAL_ERROR` | Korruption des Zustands. |
 
----
+### 0.4.3 – Soft Recovery Logic
 
-### 0.4.3 – Soft Recovery Logic (Internal Mutation)
-
-Diese Ereignisse führen **niemals** zum Abbruch, sondern lösen eine Korrektur aus.
-
-| Trigger | Aktion | Architektonischer Ort |
+| Trigger | Aktion | Ort |
 | :--- | :--- | :--- |
 | `sy ≤ curvature_guard` | Skip BFGS Update | `HessianLayer` |
-| `rank(B) < n` | Regularisierung (`eps * I`) | `HessianLayer` |
+| `rank(B) < n` | Regularisierung | `HessianLayer` |
 | Cholesky Fail (wiederholt) | Reset `B = I` | `HessianLayer` |
 | `λmax ≥ rho` | `rho *= rho_factor` | `SLSQPState` |
-| NNLS Passive Set singular | Remove Column | `QPEngine` |
 
----
+### 0.4.4 – Determinism Contract
 
-### 0.4.4 – Structural Mode Switches
-
-Explizite Pfade, die im Originalcode oft implizit waren.
-
-| Bedingung | Modus | Beschreibung |
-| :--- | :--- | :--- |
-| `m_total == 0` | **Pure BFGS** | Degradation zum unbeschränkten Löser. |
-| Nur Bounds | **Reduced QP** | QP nur für Bounds (oft vereinfacht). |
-| Linear + Nonlinear | **Full QP** | Standard SQP Schritt. |
-
----
-
-### 0.4.5 – Determinism Contract (Verbindlich)
-
-Für die Reproduktion (Equivalence Axiom) gelten strikte Regeln:
-*   **Keine** zufälligen Pivots (QR muss deterministisch sein).
-*   **Kein** `@fastmath` oder SIMD-Reordering.
-*   **Keine** hash-basierten Container in Active-Sets.
-*   Tests laufen mit `BLAS.set_num_threads(1)`.
+*   Keine zufälligen Pivots.
+*   Kein `@fastmath`.
+*   Tests mit `BLAS.set_num_threads(1)`.
 
 ---
 
 # Phase 0.5 – Architecture Proposal 2.0 (Layered & Forensic)
 
-**Ziel:** Eine geschichtete Architektur, die strikte Trennung der Verantwortlichkeiten (Separation of Concerns) erzwingt. Kein Modul kennt die Interna der darüberliegenden Schicht.
+**Ziel:** Strikte Trennung der Verantwortlichkeiten.
 
 ### 0.5.1 – Layered Workspace Design
 
-Wir ersetzen die flache Struktur durch vier logische Schichten. Das erleichtert das Debugging und das spätere "Herauslösen" von Modulen (z.B. NNLS als eigenes Paket).
-
-#### Layer 1: Solver State (Pure Data)
-Hält den aktuellen Zustand der Iteration.
+#### Layer 1: Solver State
 ```julia
 mutable struct SLSQPState{T}
     x::Vector{T}
@@ -782,29 +732,26 @@ mutable struct SLSQPState{T}
 end
 ```
 
-#### Layer 2: Hessian Layer (Approximation)
-Verwaltet die Quasi-Newton-Approximation.
+#### Layer 2: Hessian Layer
 ```julia
 mutable struct HessianLayer{T}
-    B::Matrix{T}          # Hessian Approximation
+    B::Matrix{T}
     regularization_count::Int
 end
 ```
 
-#### Layer 3: QP Engine (Subproblem)
-Löst das Quadratische Teilproblem. Kennt `Merit` und `SLSQP` nicht.
+#### Layer 3: QP Engine
 ```julia
 mutable struct QPEngine{T}
-    H::Matrix{T}          # Lokale Kopie/View für QP
-    A::Matrix{T}          # Jacobian
-    d::Vector{T}          # Suchrichtung
-    lambda_qp::Vector{T}  # Multiplikatoren des QP
+    H::Matrix{T}
+    A::Matrix{T}
+    d::Vector{T}
+    lambda_qp::Vector{T}
     nnls::NNLSWorkspace{T}
 end
 ```
 
-#### Layer 4: Orchestrator (The Solver)
-Verbindet alles. Enthält Options und State.
+#### Layer 4: Orchestrator
 ```julia
 mutable struct SLSQPWorkspace{T}
     state::SLSQPState{T}
@@ -814,45 +761,28 @@ mutable struct SLSQPWorkspace{T}
 end
 ```
 
-### 0.5.2 – Architectural Laws (Unveränderlich)
+### 0.5.2 – Architectural Laws
 
-1.  **Isolation:** `NNLSWorkspace` kennt kein QP. `QPEngine` kennt keine Merit-Function. `HessianLayer` kennt keine Constraints.
-2.  **Memory Transparency:** Datenflüsse sind explizit. Keine versteckten Zustände.
-3.  **Type Stability:** Alle Felder sind konkret typisiert (kein `Any`).
+1.  **Isolation:** Kein Modul kennt höhere Layer.
+2.  **Memory Transparency:** Datenflüsse sind explizit.
+3.  **Type Stability:** Alle Felder konkret typisiert.
 
 ---
 
 # Phase 0.6 – Go/No-Go & Closure
 
-**Ziel:** Finaler Checkpunkt vor Implementierungsbeginn.
-
 ### 0.6.1 – Reproduction Readiness Checklist
 
-| Kriterium | Status | Kommentar |
-| :--- | :--- | :--- |
-| Konstanten fixiert (0.2) | ✅ | Version 1.4 |
-| Constraint-Trennung (0.3) | ✅ | Linear/Nonlinear |
-| Exit Semantik (0.4) | ✅ | Hard/Soft/Modes |
-| Architektur Modular (0.5) | ✅ | Layered Design |
-| Determinism Contract | ✅ | Fixiert |
+| Kriterium | Status |
+| :--- | :--- |
+| Konstanten fixiert (0.2) | ✅ |
+| Constraint-Trennung (0.3) | ✅ |
+| Exit Semantik (0.4) | ✅ |
+| Architektur Modular (0.5) | ✅ |
+| Determinism Contract | ✅ |
 
-### 0.6.2 – Definition of Equivalence (Acceptance Criteria)
-
-Wir streben keine Bit-Identität an (unmöglich über verschiedene Sprachen/Compiler), sondern **Numerische Äquivalenz**:
-
-$$ \text{Abweichung} \le O(\sqrt{\epsilon_{machine}}) $$
-
-*   Iterationspfade müssen identisch sein (gleiche Schritte).
-*   Werte dürfen in der letzten signifikanten Stelle variieren.
-*   Exit-Codes müssen bei gleichen Problemen übereinstimmen.
-
-### 0.6.3 – Decision
+### 0.6.2 – Decision
 
 **Entscheid: GO for Phase 1.**
 
-**Begründung:**
-Die Spezifikation ist "wasserdicht".
-*   Jede Konstante ist definiert.
-*   Jeder Exit-Code ist semantisch klassifiziert.
-*   Die Architektur verhindert algorithmische "Drift".
-*   Risiken (BLAS, Float-Order) sind bekannt und tolerierbar.
+Die Spezifikation ist wasserdicht. Risiken sind bekannt und tolerierbar.
