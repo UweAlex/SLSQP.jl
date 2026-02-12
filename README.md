@@ -368,140 +368,143 @@ Every non-trivial numerical decision must be traceable to a documented reference
 
 # End of Phase 0.1 (Corrected English Edition)
 
-# Phase 0.2 – Numerical Constants & Tolerances Table
+Das ist ein sehr guter Vorschlag der anderen KI. Die Struktur ist sauber, die Sprache professionell und die Dual-Layer-Logik (Level R vs. Level E) wurde korrekt übernommen.
 
-**Version:** 1.4 (corrected & fully consolidated)
-**Status:** Forensic-complete – Freeze candidate
+Allerdings gibt es **zwei kritische Punkte**, die wir korrigieren müssen, bevor wir das Dokument "einfrieren":
 
----
+1.  **Widerspruch `rho_init`:**
+    In Ihrem Pseudocode (Phase 0.3.1) haben wir `rho = options.rho0` mit dem Kommentar `# Reference default = 10.0` festgelegt.
+    In der Tabelle hier steht `rho_init = 1.0`.
+    *Korrektur:* Wir müssen **10.0** nehmen, um mit NLopt/SciPy (die es fast immer mit 10 initialisieren) und unserem Pseudocode konsistent zu sein. 1.0 ist der theoretische Wert aus dem Paper, aber 10.0 ist die "Production Reality".
 
-## A. Algorithm Core Parameters (non-override until Phase 4)
+2.  **Formatierungsfehler in den Tabellen:**
+    Die Tabellen in dem Vorschlag haben einige "kaputte" Pipes (`|`) und leere Spalten, die vermutlich beim Kopieren entstanden sind (z.B. `| λ |` oder `| |`). Das muss für das README bereinigt werden.
 
-| # | Parameter             | Default                         | Source      | Purpose                    | Sensitivity / Notes                                     |
-| - | --------------------- | ------------------------------- | ----------- | -------------------------- | ------------------------------------------------------- |
-| 1 | `rho_init`            | 1.0                             | Kraft p.12  | Initial L1 penalty         | Medium                                                  |
-| 2 | `rho_factor`          | **10.0 (strict_kraft default)** | slsqp.c     | Penalty multiplier         | High; SciPy sometimes 100 → only in `strict_scipy` mode |
-| 3 | `delta_lambda_offset` | 1e-2                            | NLopt impl  | Maratos guard margin       | High; prevents rho ≈ λmax stagnation                    |
-| 4 | `theta_lim`           | 0.2                             | Powell 1978 | Damped BFGS threshold      | High                                                    |
-| 5 | `curvature_guard`     | 1e-10                           | slsqp.c     | Absolute BFGS skip guard   | Medium                                                  |
-| 6 | `sigma`               | 0.1                             | Kraft       | Backtracking factor        | Medium                                                  |
-| 7 | `eta`                 | 0.01                            | Kraft/NLopt | Armijo sufficient decrease | High                                                    |
+Hier ist die **finale, bereinigte Version**, die wir in das Repository übernehmen können.
 
 ---
 
-## B. Termination & User-Facing Controls
+# 🧭 Phase 0.2 – Numerical Constants & Tolerances Table
 
-| #  | Parameter         | Default                     | Source      | Purpose                   | Notes                  |
-| -- | ----------------- | --------------------------- | ----------- | ------------------------- | ---------------------- |
-| 8  | `acc`             | 1e-6 (SciPy) / 1e-8 (NLopt) | wrapper     | General convergence       | High divergence source |
-| 9  | `maxiter`         | 1000 or 3n                  | slsqp.c     | Major iterations          | Low                    |
-| 10 | `maxfun`          | 1000 or 10n                 | slsqp_opt.f | Function eval limit       | Low                    |
-| 11 | `ftol_rel`        | 1e-8                        | NLopt       | Relative objective change | High                   |
-| 12 | `ftol_abs`        | 1e-10                       | NLopt       | Absolute objective change | High                   |
-| 13 | `xtol_rel`        | 1e-8                        | NLopt       | Relative step change      | High                   |
-| 14 | `xtol_abs`        | 1e-10                       | NLopt       | Absolute step change      | High                   |
-| 15 | `constr_viol_tol` | 1e-8                        | Kraft/NLopt | Feasibility tolerance     | High                   |
+**Version:** 3.2 – Final Consolidated  
+**Status:** Forensic-complete and frozen for reconstruction.  
+**Language:** English (Authoritative)
+
+This phase documents the numerical "DNA" of SLSQP. Following the Dual-Layer standard from Phase 0.1, parameters are separated into:
+
+*   **LEVEL R (Binding Reconstruction):** Mandatory values for Phases 0–3 to ensure numerical equivalence.
+*   **LEVEL E (Evolutionary/Optional):** Parameters for future adaptation (Phase 5+). These must **not** alter reconstruction behavior.
 
 ---
 
-## C. Numerical Safety Guards (Julia-adaptable)
+# LEVEL R — CANONICAL DEFAULTS (Binding)
 
-| #  | Parameter           | Default           | Source           | Purpose                     | Notes                                  |
-| -- | ------------------- | ----------------- | ---------------- | --------------------------- | -------------------------------------- |
-| 16 | `eps_machine`       | machine eps       | C impl           | Zero detection              | Julia: `eps(T)`                        |
-| 17 | `eps_rank`          | ~sqrt(eps)        | slsqp.c usage    | Rank detection              | Important distinction from eps_machine |
-| 18 | `w_tol`             | 1e-8              | NNLS             | Dual feasibility            | High                                   |
-| 19 | `activation_thresh` | eps               | Lawson-Hanson    | Constraint activation       | High                                   |
-| 20 | `alpha_min`         | 1e-10             | slsqp.c          | Line-search abort           | Low                                    |
-| 21 | `alpha_ratio_tol`   | ~1e-12            | implicit in NNLS | Boundary step tie tolerance | Prevents cycling                       |
-| 22 | `tiny`              | 1e-30             | slsqp_opt.f      | Division lower bound        | Safety only                            |
-| 23 | `B_reset_tol`       | ~1e-14 (implicit) | NLopt            | If B loses PD → reset to I  | Critical fallback                      |
+*Mandatory values for Phases 0–3. Every non-trivial decision must trace back to this level.*
 
----
+## R1 — Core Algorithmic Constants
 
-# 🔎 Neue Präzisierungen
+| Parameter             | Value  | Source           | Role / Description                                                                 |
+| --------------------- | ------ | ---------------- | ---------------------------------------------------------------------------------- |
+| `rho_init`            | 10.0   | NLopt/SciPy      | Initial L1 penalty parameter. (Kraft suggests 1.0, but standard impl. use 10.0).   |
+| `rho_factor`          | 10.0   | Kraft/NLopt      | Multiplier for penalty updates; prevents stagnation.                               |
+| `delta_lambda_offset` | 1e-2   | NLopt impl       | Maratos guard margin; ensures $\rho > \|\lambda\|_\infty + \text{offset}$.          |
+| `theta_lim`           | 0.2    | Powell 1978      | Damping threshold for BFGS updates ($s^Ty < \theta \cdot s^TBs$).                  |
+| `curvature_guard`     | 1e-10  | slsqp.c          | Absolute guard for $s^Ty$; skips BFGS update if below threshold.                   |
+| `sigma`               | 0.1    | Kraft            | Backtracking reduction factor in Armijo line search ($\alpha \leftarrow \alpha\sigma$). |
+| `eta`                 | 0.01   | Kraft/NLopt      | Armijo slope parameter for sufficient merit decrease.                              |
+| `alpha_min`           | 1e-10  | slsqp.c          | Minimum step size before declaring line search failure.                            |
+| `alpha_ratio_tol`     | ~1e-12 | Implicit in NNLS | Boundary step tie tolerance; prevents cycling on degenerate ratios.                |
 
-## 1. eps ist NICHT eindeutig
-
-Es gibt zwei unterschiedliche Verwendungen:
-
-* `eps_machine` → reine numerische Nulltests
-* `eps_rank` → Skala für Rangtests (typisch √eps)
-
-Diese müssen getrennt dokumentiert werden.
+**Notes:** High sensitivity for `rho_factor`. SciPy sometimes uses 100 in wrappers. We use 10.0 for strict Kraft/NLopt equivalence.
 
 ---
 
-## 2. BFGS Reset fehlt in 1.3
+## R2 — Primary Termination Criteria
 
-In NLopt wird B ggf. auf Identität zurückgesetzt, wenn:
+| Parameter         | Value                       | Source      | Role / Description                                                               |
+| ----------------- | --------------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `acc`             | 1e-6 (SciPy) / 1e-8 (NLopt) | wrapper     | General convergence accuracy (KKT norm / feasibility). High divergence source.   |
+| `maxiter`         | 100 (SciPy) or 3*n (NLopt)  | slsqp.c     | Maximum major iterations; scales with $n$ in NLopt.                              |
+| `maxfun`          | 1000 or 10*n                | slsqp_opt.f | Maximum function/gradient evaluations.                                           |
+| `constr_viol_tol` | 1e-8                        | Kraft/NLopt | Feasibility tolerance ($\max(\|c\|) < \text{tol}$). High sensitivity.            |
 
-* Cholesky fehlschlägt
-* Krümmungsbedingungen wiederholt verletzt werden
-
-Das ist kein theoretischer Parameter, aber eine **harte numerische Schutzmaßnahme** → gehört zwingend in 0.2.
-
----
-
-## 3. NNLS Boundary Ratio Tolerance
-
-Beim inneren Loop:
-
-```
-α = min(x_i / (x_i - x_new_i))
-```
-
-Hier existiert implizit eine Toleranz gegen numerisches Rauschen.
-Ohne diese bekommst du Zyklierung bei degenerierten Constraints.
-
-Diese Konstante war bisher nicht explizit.
+**Notes:** SciPy defaults to tighter iteration limits for benchmarks; use problem-dependent scaling for equivalence.
 
 ---
 
-# 🔁 Aktualisierte Interaction Matrix (ergänzt)
+## R3 — Numerical Safety Guards
 
-| Interaction                        | Effect                     |
-| ---------------------------------- | -------------------------- |
-| `rho_factor ↔ delta_lambda_offset` | Penalty aggressiveness     |
-| `eps_rank ↔ B_reset_tol`           | Hessian fallback frequency |
-| `w_tol ↔ activation_thresh`        | Active-set stability       |
-| `alpha_ratio_tol ↔ w_tol`          | Anti-cycling NNLS          |
-| `curvature_guard ↔ theta_lim`      | BFGS damping frequency     |
-| `eta ↔ rho_init`                   | Merit acceptance behavior  |
-
----
-
-# 🧭 Bewertung
-
-Phase 0.2 war **sehr gut**, aber nicht vollständig.
-
-Mit 1.4 ist sie jetzt:
-
-* reproduktionsfähig
-* ohne Magic Numbers
-* vollständig parameterisiert
-* numerisch defensiv
-* divergences dokumentiert
-* Julia-portierbar
+| Parameter           | Value             | Source        | Role / Description                                                        |
+| ------------------- | ----------------- | ------------- | ------------------------------------------------------------------------- |
+| `eps_machine`       | machine epsilon   | C impl        | Floating-point epsilon for zero detection; Julia: `eps(T)`.               |
+| `eps_rank`          | ~sqrt(eps)        | slsqp.c usage | Rank detection in QR/Cholesky (~1.49e-8 for Float64). Distinct from eps.  |
+| `w_tol`             | 1e-8              | NNLS          | Dual feasibility tolerance in NNLS ($\max(w_Z) \le \text{tol}$).          |
+| `activation_thresh` | eps               | Lawson-Hanson | Threshold for constraint activation.                                      |
+| `tiny`              | 1e-30             | slsqp_opt.f   | Lower bound for divisions to prevent underflow.                           |
+| `B_reset_tol`       | ~1e-14 (implicit) | NLopt         | Reset Hessian $B$ to Identity if positive definiteness is lost.           |
 
 ---
 
-# 🔒 Ergebnis
+# LEVEL E — EVOLUTIONARY PARAMETERS (Optional / Adaptive)
 
-Phase 0.2 ist jetzt **forensisch vollständig**.
+*Architecturally prepared parameters for Phase 5; do not impact Phases 0–3.*
 
+## E1 — Advanced Convergence Controls
 
-
-- Status: Pending – next immediate step.
-
-# Phase 0.3 – Revision 3
-
-**Forensic Pseudocode Specification (Reference-Faithful)**
-
-Referenzen:
-Kraft (1988), NLopt `slsqp.c`, SciPy `slsqp_opt.f`, Lawson–Hanson (1995), Powell (1978)
+| Parameter  | Value | Source | Role / Description                                                |
+| ---------- | ----- | ------ | ----------------------------------------------------------------- |
+| `ftol_rel` | 1e-8  | NLopt  | Relative objective change ($\Delta f / |f| < \text{tol}$).        |
+| `ftol_abs` | 1e-10 | NLopt  | Absolute objective change ($\Delta f < \text{tol}$).              |
+| `xtol_rel` | 1e-8  | NLopt  | Relative parameter change ($\|\Delta x\| / \|x\| < \text{tol}$).  |
+| `xtol_abs` | 1e-10 | NLopt  | Absolute parameter change ($\|\Delta x\| < \text{tol}$).          |
 
 ---
+
+## E2 — Machine-Aware & Wrapper Extensions
+
+| Parameter              | Value / Logic | Source      | Role / Description                                        |
+| ---------------------- | ------------- | ----------- | --------------------------------------------------------- |
+| `finite_diff_rel_step` | auto-scaled   | SciPy       | Relative step for numerical Jacobians if not provided.    |
+| `disp`                 | False         | SciPy       | Verbosity flag for convergence messages.                  |
+| `workers`              | 1             | SciPy 1.16+ | Number of workers for parallel finite differences.        |
+
+---
+
+# 🔎 Numerical Precisions & Guards
+
+1.  **Epsilon is NOT Unique:**
+    *   `eps_machine`: Pure floating-point zero/equality tests.
+    *   `eps_rank`: Linear algebra stability ($\sigma < \epsilon_{rank} \implies \text{rank-deficient}$), typically $\sqrt{\epsilon_{machine}}$. Must be separate.
+
+2.  **BFGS Reset (Essential Guard):**
+    Reset $B$ to $I$ if: Cholesky fails or curvature conditions repeatedly violated. Level R: mandatory fallback.
+
+3.  **NNLS Boundary Ratio Tolerance:**
+    $$ \alpha = \min(x_i / (x_i - x_{\text{new}, i})) $$
+    Set $\approx 10^{-12}$ to prevent cycling on degenerate constraints.
+
+---
+
+# 🔁 Interaction Matrix (Refined)
+
+| Interaction                        | Effect                     | Notes                                                      |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------- |
+| `rho_factor` ↔ `delta_lambda_offset` | Penalty aggressiveness     | Offset ensures dominance; high `rho_factor` risks overshoot. |
+| `eps_rank` ↔ `B_reset_tol`           | Hessian fallback frequency | Triggers reset on rank deficiency.                         |
+| `w_tol` ↔ `activation_thresh`        | Active-set stability       | Loose `w_tol` may over-activate constraints.               |
+| `alpha_ratio_tol` ↔ `w_tol`          | Anti-cycling NNLS          | Ties resolved deterministically.                           |
+| `curvature_guard` ↔ `theta_lim`      | BFGS damping frequency     | Guard skips; theta damps for PD preservation.              |
+| `eta` ↔ `rho_init`                   | Merit acceptance behavior  | Small `eta` strictens decrease; low `rho` favors objective.|
+
+---
+
+# 🔒 Result
+
+Phase 0.2 is **forensically complete and foundational**.
+
+*   **Status:** Ready for Phase 0.3 integration.
+
+
 
 # 0.3.0 – Constraint Classification Strategy (NEU – verbindlich)
 
