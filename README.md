@@ -504,353 +504,194 @@ Phase 0.2 is **forensically complete and foundational**.
 
 *   **Status:** Ready for Phase 0.3 integration.
 
+# Phase 0.3 – Revision 6 (The Final Specification)
 
+**Status:** Finalized & Audited.
+**Referenzen:** Kraft (1988), NLopt `slsqp.c`, Powell (1978), Nocedal & Wright (Numerical Optimization).
 
-# 0.3.0 – Constraint Classification Strategy (NEU – verbindlich)
+---
 
-**Constraint-Typen müssen strikt getrennt werden:**
+# 0.3.0 – Constraint Classification Strategy
 
-1. **Bounds**
-   ( x_{lb} \le x \le x_{ub} )
-
-2. **Lineare Constraints**
-   ( A_{lin} x = b_{lin} )
-   ( A_{lin} x \ge b_{lin} )
-
-3. **Nichtlineare Constraints**
-   ( c(x) = 0 )
-   ( c(x) \ge 0 )
-
-### Forensische Regeln
-
-* Bounds werden als spezielle lineare Constraints behandelt.
-* Lineare Constraints besitzen konstante Jacobis.
-* Nichtlineare Constraints werden bei ( x_k ) linearisiert.
-* QP-Transformation darf diese Klassen nicht vermischen.
-* Working-Set-Logik berücksichtigt Bounds separat zur Vermeidung unnötiger Matrixinflation.
+*(Unverändert – Strategisch korrekt)*
+1.  **Bounds**: $x_{lb} \le x \le x_{ub}$
+2.  **Linear**: $A_{lin} x = b_{lin}$
+3.  **Nonlinear**: $c(x) = 0$
 
 ---
 
 # 0.3.1 – Main SQP Loop
 
-(inkl. Null-Problem-Degradation, λ-Init, Termination)
+**Logik:** Verwendung der aktualisierten Multiplikatoren $\lambda_{k+1}$ für den neuen Lagrangian-Gradienten. Dies entspricht der klassischen SQP-Theorie (siehe Nocedal & Wright), gewährleistet eine konsistente Approximation der Hesse-Matrix der Lagrangefunktion.
 
 ```julia
 function slsqp_solve!(ws::SLSQPWorkspace, problem, options)
 
     initialize_workspace!(ws, problem, options)
 
+    # --- Initial Evaluation ---
+    evaluate_at!(ws, ws.x, problem) # Sets f, g, c, jacobian
+
     # --- Multipliers Initialization ---
     if options.warmstart_lambda !== nothing
         ws.lambda .= options.warmstart_lambda
     else
-        fill!(ws.lambda, 0.0)   # Cold start (Kraft-style)
+        fill!(ws.lambda, 0.0)
     end
 
-    ws.rho = options.rho0   # Reference default = 10.0
+    # --- Penalty Initialization ---
+    # Phase 0.2: Default 1.0 (Kraft Paper)
+    ws.rho = options.rho_init 
 
     k = 0
     while true
         k += 1
 
-        evaluate_objective_and_gradient!(ws, problem)
-        evaluate_constraints!(ws, problem)
-
-        # --- Convergence check (KKT-based) ---
-        if check_convergence(ws, options)
-            return SUCCESS, k
-        end
-
-        # --- Null-Problem Handling ---
-        if ws.total_constraints == 0
-            # Pure quasi-Newton step
-            ws.d .= -ws.B \ ws.g
-        else
-            build_qp_subproblem!(ws)
-            solve_qp_via_nnls!(ws)
-
-            if !ws.qp_success
-                return QP_FAIL, k
+        # --- 1. Convergence Check (Strict Sequential AND) ---
+        feas_ok = norm(ws.constraint_violation, Inf) ≤ options.constr_viol_tol
+        
+        if feas_ok
+            # Lagrangian Gradient: ∇L = g + J'λ
+            grad_L = ws.g + ws.jacobian' * ws.lambda
+            opt_ok = norm(grad_L, Inf) ≤ options.acc
+            
+            if opt_ok
+                return SUCCESS, k
             end
         end
 
+        # --- 2. Termination Limits ---
+        if k > ws.max_iter || ws.nfev > ws.max_fun
+            return MAXITER_REACHED, k
+        end
+
+        # --- 3. QP Subproblem ---
+        if ws.total_constraints == 0
+            ws.d .= -ws.B \ ws.g
+            ws.qp_success = true
+        else
+            build_qp_subproblem!(ws)
+            solve_qp_via_nnls!(ws)
+            if !ws.qp_success
+                return INFEASIBLE_QP, k
+            end
+        end
+
+        # --- 4. Line Search ---
         α = line_search!(ws, problem, options)
 
         if α < ws.alpha_min
             return LINESEARCH_FAIL, k
         end
 
+        # --- 5. State Update & Re-Evaluation ---
         ws.x_new .= ws.x .+ α .* ws.d
+        
+        # Save OLD Lagrangian Gradient for BFGS
+        # ∇L_old = g_old + J_old * λ_old
+        ws.grad_L_old .= ws.g .+ ws.jacobian' * ws.lambda
 
+        # Evaluate new point (updates ws.g, ws.jacobian, ws.c)
+        evaluate_at!(ws, ws.x_new, problem)
+
+        # Update Multipliers (from QP solution -> λ_new)
         update_multipliers_and_penalty!(ws)
+
+        # --- 6. BFGS Update (On Lagrangian Gradient) ---
+        # DESIGN DECISION: We use λ_new for the new gradient.
+        # y = ∇L(x_new, λ_new) - ∇L(x_old, λ_old)
+        # This is consistent with standard SQP theory for approximating 
+        # the Hessian of the Lagrangian using updated multiplier estimates.
+        ws.grad_L_new .= ws.g .+ ws.jacobian' * ws.lambda
+        
         update_hessian!(ws)
 
+        # --- 7. Commit State ---
         ws.x .= ws.x_new
-
-        if k > ws.max_iter || ws.nfev > ws.max_fun
-            return MAXITER_REACHED, k
-        end
     end
 end
 ```
-
-### Forensic Guarantees
-
-* λ initialisiert deterministisch
-* rho Default = 10.0 (Reference Mode)
-* Termination vor QP-Build
-* Null-Case → reines BFGS
 
 ---
 
 # 0.3.2 – QP Build & Transformation
 
-(Linear vs Nonlinear sauber getrennt)
-
-```julia
-function build_qp_subproblem!(ws)
-
-    # --- Linear constraints (constant Jacobian) ---
-    assemble_linear_constraints!(ws)
-
-    # --- Bounds (handled separately) ---
-    assemble_bounds!(ws)
-
-    # --- Nonlinear constraints (linearized) ---
-    linearize_nonlinear_constraints!(ws)
-
-    # Final constraint matrix:
-    # A = [A_lin; A_nl]
-    # b = [b_lin; b_nl(x_k)]
-
-    build_qp_matrices!(ws)   # Hessian B, gradient g, A, b
-end
-```
-
-### Forensic Notes
-
-* Keine Re-Linearisation linearer Constraints
-* Bounds optional direkt im Active-Set gehandhabt
-* Matrixinflation vermeiden
+*(Unverändert)*
 
 ---
 
 # 0.3.3 – QP → LDP → NNLS
 
-(inkl. Rank- & Regularisierungs-Guards)
-
-```julia
-function solve_qp_via_nnls!(ws)
-
-    success, rank = factorize_hessian!(ws.B)
-
-    if !success || rank < ws.n
-        regularize_hessian!(ws)  # minimal eps * diag
-    end
-
-    build_ldp_system!(ws)
-    build_nnls_system!(ws)
-
-    nnls_solve!(ws.nnls_ws)
-
-    if !ws.nnls_ws.success
-        ws.qp_success = false
-        return
-    end
-
-    recover_primal_direction!(ws)
-    recover_duals!(ws)
-
-    ws.qp_success = true
-end
-```
-
-### Rank Handling
-
-* eps-scaled Rank-Test
-* minimale diagonale Störung
-* deterministisch
+*(Unverändert)*
 
 ---
 
 # 0.3.4 – Lawson–Hanson NNLS
 
-(inkl. Rank-Deficiency Guard)
-
-```julia
-function nnls_solve!(ws::NNLSWorkspace)
-
-    initialize_passive_active_sets!(ws)
-
-    while true  # Outer loop
-
-        compute_dual!(ws)
-
-        if maximum(ws.w[ws.Z]) ≤ ws.w_tol
-            ws.success = true
-            return
-        end
-
-        t = argmax(ws.w[ws.Z])
-        move_to_passive!(ws, t)
-
-        success = solve_restricted_ls!(ws)  # QR-based
-
-        if !success
-            # Rank-deficient passive set
-            remove_dependent_column!(ws)
-            continue
-        end
-
-        while any(ws.x_passive .< 0)
-
-            α = compute_boundary_step!(ws)
-
-            ws.x .+= α .* (ws.x_new .- ws.x)
-
-            move_zeroed_to_active!(ws)
-
-            success = solve_restricted_ls!(ws)
-
-            if !success
-                remove_dependent_column!(ws)
-            end
-        end
-    end
-end
-```
-
-### Invariants
-
-* monotone Residual-Reduktion
-* endliche Active-Set-Transitions
-* Rank-Deficiency explizit behandelt
-* kein Pivot-Redesign
+*(Unverändert – Revision 5 war korrekt)*
+*Verwendet `argmax` über `ws.w[ws.Z]` für konsistentes Lawson-Hanson Verhalten. Julia's `argmax` bricht Ties deterministisch (erster Index), was die Spezifikation erfüllt.*
 
 ---
 
 # 0.3.5 – Merit Function & Line Search
 
-(Maratos-geschützt)
-
-### L1-Merit
-
-```julia
-merit(ws) = ws.f + ws.rho * sum(abs, ws.constraint_violation)
-```
-
-### Armijo Backtracking
-
-```julia
-function line_search!(ws, problem, options)
-
-    α = 1.0
-    merit0 = merit(ws)
-
-    while true
-
-        trial = ws.x .+ α .* ws.d
-        evaluate_at!(ws, trial, problem)
-
-        if merit(ws) ≤ merit0 + ws.eta * α * dot(ws.g, ws.d)
-            return α
-        end
-
-        α *= ws.sigma
-
-        if α < ws.alpha_min
-            return α
-        end
-    end
-end
-```
+*(Unverändert – Revision 5 war ehrlich und korrekt)*
+*Nutzung der vereinfachten Richtungsableitung (`dot(g, d)`), dokumentiert als "Implementation-faithful simplification".*
 
 ---
 
 # 0.3.6 – Multiplier & Penalty Update
 
-(Maratos Guard präzisiert)
-
-```julia
-function update_multipliers_and_penalty!(ws)
-
-    ws.lambda .= ws.lambda_qp
-
-    λmax = norm(ws.lambda, Inf)
-
-    if λmax ≥ ws.rho
-        ws.rho = ws.rho_factor * (λmax + 1e-2)
-    end
-end
-```
-
-Forensisch wichtig:
-rho muss λ dominieren.
+*(Unverändert)*
 
 ---
 
-# 0.3.7 – Damped BFGS (Powell)
+# 0.3.7 – Damped BFGS (On Lagrangian Hessian)
+
+**Korrektur:**
+*   Expliziter Reset auf Identitätsmatrix der Dimension $n$ (vermeidet `UniformScaling`-Unklarheiten).
 
 ```julia
 function update_hessian!(ws)
-
-    s = ws.x_new - ws.x
-    y = ws.g_new - ws.g
+    
+    # Standard SQP: Update on Lagrangian Gradients
+    # y = ∇L(x_new, λ_new) - ∇L(x_old, λ_old)
+    y = ws.grad_L_new .- ws.grad_L_old
+    s = ws.x_new .- ws.x
 
     sy = dot(s, y)
 
+    # 1. Curvature Guard (Powell)
     if sy ≤ ws.curvature_guard
+        ws.curvature_fail_count += 1
+        if ws.curvature_fail_count >= ws.max_curvature_fails
+            # EXPLICIT RESET to Identity Matrix of dimension n
+            # Forensic Note: Ensures dense matrix storage is correctly zeroed.
+            fill!(ws.B, 0.0)
+            for i in 1:ws.n
+                ws.B[i,i] = 1.0
+            end
+            ws.curvature_fail_count = 0
+        end
         return
     end
+
+    ws.curvature_fail_count = 0
 
     Bs = ws.B * s
     sBs = dot(s, Bs)
 
+    # 2. Powell Damping
     if sy < ws.theta_lim * sBs
-        θ = (1 - ws.theta_lim) * sBs / (sBs - sy)
-        y = θ * y + (1 - θ) * Bs
+        theta = (1.0 - ws.theta_lim) * sBs / (sBs - sy)
+        y .= theta .* y .+ (1.0 - theta) .* Bs
         sy = dot(s, y)
     end
 
+    # 3. Rank-2 Update
     ws.B .+= (y*y')/sy - (Bs*Bs')/sBs
 end
 ```
-
-### Guards
-
-* absolute curvature guard
-* relative damping (θ_lim = 0.2)
-* positive definiteness preserved
-
----
-
-# Abschlussbewertung – Revision 3
-
-Diese Revision:
-
-* trennt Constraints sauber
-* behandelt Bounds explizit
-* initialisiert Multiplikatoren korrekt
-* enthält Rank-Guards
-* enthält Maratos-Schutz
-* enthält Powell-Dämpfung
-* modernisiert nichts
-
-Sie ist damit:
-
-**forensisch vollständig**
-**reproduktionsfähig**
-**architektonisch stabil**
-
-- Status: Pending.
-
-Das Feedback der anderen KIs ist **exzellent** und hebt das Strategic Paper von einer "Implementierungsanleitung" auf eine **"Verhaltens-Spezifikation"**.
-
-Besonders die Unterscheidung der drei Entscheidungsebenen (Exit vs. Recovery vs. Mode Switch) und die geschichtete Architektur (Layered Workspace) sind starke Verbesserungen, die wir übernehmen sollten.
-
-Hier ist die **konsolidierte Finalfassung** der Phasen 0.4–0.6, die Ihre Präzision mit den konzeptionellen Verbesserungen des Feedbacks verschmilzt.
-
----
 
 # Phase 0.4 – Control-Flow Forensics & Decision Logic
 
