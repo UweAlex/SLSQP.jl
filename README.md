@@ -673,43 +673,177 @@ end
 
 ---
 
-# Phase 0.4 – Control-Flow Forensics & Decision Logic
+# Phase 0.4 – Control-Flow Forensics & Decision Logic (Extended Edition)
 
-**Ziel:** Definition des Solvers als deterministische Zustandsmaschine.
+**Objective:** Definition of the solver as a deterministic state machine, augmented by a formal Design-by-Contract (DbC) layer to ensure state integrity and verification readiness.
 
-### 0.4.1 – Die drei Ebenen der Entscheidungslogik
+---
 
-1.  **Hard Exit:** Terminierung (Return to User).
-2.  **Soft Recovery:** Interne Zustandsmutation (Lauf wird fortgesetzt).
-3.  **Structural Mode Switch:** Wechsel des Algorithmuspfades.
+### 0.4.1 – Levels of Decision Logic
+
+Every conditional branch in the solver is classified into one of three mutually exclusive categories to eliminate ambiguity in control flow and error handling.
+
+1.  **Hard Exit:** Termination of the optimization process (return to user).
+2.  **Soft Recovery:** Internal state mutation; execution continues.
+3.  **Structural Mode Switch:** Deterministic change of algorithmic path within the SLSQP framework.
+
+No branch may belong to more than one category.
+
+---
 
 ### 0.4.2 – Hard Exit Matrix (Termination)
 
-| Kategorie | Bedingung | Return Code | Semantik |
-| :--- | :--- | :--- | :--- |
-| **Optimality** | KKT erfüllt & Feasibility ok | `SUCCESS` | Konvergenz erreicht. |
-| **Resource Bound** | `k > maxiter` | `MAXITER_REACHED` | User-Limit (Policy). |
-| **Resource Bound** | `nfev > maxfun` | `MAXFUN_REACHED` | Wrapper-Policy. |
-| **Structural Failure** | QP unlösbar / NNLS Fail | `INFEASIBLE_QP` | Lineares Modell widersprüchlich. |
-| **Structural Failure** | `α < alpha_min` | `LINESEARCH_FAIL` | Merit-Function lässt sich nicht senken. |
-| **Numerical Error** | `NaN / Inf` in `x, f, g` | `NUMERICAL_ERROR` | Korruption des Zustands. |
+Status codes are aligned with legacy `MODE` semantics and enriched with explicit meaning.
 
-### 0.4.3 – Soft Recovery Logic
+| Category               | Condition                                                | Return Code       | Semantics                                           |
+| :--------------------- | :------------------------------------------------------- | :---------------- | :-------------------------------------------------- |
+| **Optimality**         | KKT conditions satisfied & feasibility within tolerance  | `SUCCESS`         | Convergence achieved.                               |
+| **Resource Bound**     | `k > maxiter`                                            | `MAXITER_REACHED` | Iteration limit exceeded (user policy).             |
+| **Resource Bound**     | `nfev > maxfun`                                          | `MAXFUN_REACHED`  | Function evaluation limit exceeded (wrapper policy).|
+| **Structural Failure** | QP unsolvable or NNLS failure                            | `INFEASIBLE_QP`   | Linearized subproblem inconsistent or infeasible.   |
+| **Structural Failure** | `α < alpha_min` after line search                        | `LINESEARCH_FAIL` | Merit function cannot be sufficiently decreased.    |
+| **Numerical Error**    | `NaN` or `Inf` detected in `x`, `f`, `g`, or constraints | `NUMERICAL_ERROR` | Numerical state corruption detected.                |
 
-| Trigger | Aktion | Ort |
-| :--- | :--- | :--- |
-| `sy ≤ curvature_guard` | Skip BFGS Update | `HessianLayer` |
-| `rank(B) < n` | Regularisierung | `HessianLayer` |
-| Cholesky Fail (wiederholt) | Reset `B = I` | `HessianLayer` |
-| `λmax ≥ rho` | `rho *= rho_factor` | `SLSQPState` |
-
-### 0.4.4 – Determinism Contract
-
-*   Keine zufälligen Pivots.
-*   Kein `@fastmath`.
-*   Tests mit `BLAS.set_num_threads(1)`.
+**Note:** The condition `k > maxiter` ensures that exactly `maxiter` iterations are attempted before termination. All termination conditions must be deterministic, non-overlapping, and semantically complete.
 
 ---
+
+### 0.4.3 – Soft Recovery Logic (Internal Mutation)
+
+The following events **never** trigger termination but enforce corrective measures within the solver state.
+
+| Trigger                             | Action                                  | Architectural Location      |
+| :---------------------------------- | :-------------------------------------- | :-------------------------- |
+| `sy ≤ curvature_guard`              | Skip BFGS update                        | `HessianLayer`              |
+| Repeated curvature violations       | Reset `B = I`                           | `HessianLayer`              |
+| Cholesky factorization failure      | Reset `B = I`                           | `HessianLayer`              |
+| Rank deficiency in `B` or QP system | Apply regularization (`τ * I`, τ ≈ eps) | `HessianLayer` / `QPEngine` |
+| `‖λ‖∞ ≥ rho`                        | Update `rho *= rho_factor`              | `SLSQPState`                |
+
+Soft recovery mechanisms are strictly limited to reference-consistent safeguards and do not introduce new algorithmic behavior.
+
+---
+
+### 0.4.4 – Design by Contract Specification (Formal Layer)
+
+To guarantee integrity of the deterministic state machine, a formal contract layer is introduced.
+Contracts enable runtime validation in debug mode and prepare the solver for future formal verification.
+
+#### A. Contract Categories
+
+Each solver component must explicitly define:
+
+1.  **Preconditions:** Conditions required at function entry.
+2.  **Postconditions:** Conditions guaranteed upon successful return.
+3.  **Frame Conditions:** Memory regions permitted to be modified.
+4.  **Invariants:** Properties that must hold for the workspace at defined boundaries.
+
+---
+
+#### B. Global Solver Invariants
+
+These invariants must hold at every iteration boundary.
+Violation ⇒ `NUMERICAL_ERROR`.
+
+**State Invariants**
+
+*   **Dimensions:** `length(x) == n`, `length(g) == n`, `size(B) == (n,n)`.
+*   **Structural:** `B` symmetric within `eps_rank`.
+*   **Parameter bounds:** `rho ≥ rho_init`.
+*   **Sanity:** No `NaN` or `Inf` in `x`, `g`, `lambda`, or constraint vectors.
+
+**Determinism Invariants**
+
+*   BLAS configured single-threaded (`BLAS.set_num_threads(1)`).
+*   No mutation of immutable `options`.
+*   No implicit type changes in workspace fields.
+
+---
+
+#### C. Example Contract: QP Solver Entry Point
+
+The most critical boundary in SLSQP is the QP subproblem solver.
+
+**Function:** `solve_qp_via_nnls!(ws)`
+
+##### 1. Preconditions (must hold at entry)
+
+*   **Hessian:** `B` symmetric (within tolerance), finite, correct dimension.
+*   **Gradient:** `g` finite and correct dimension.
+*   **Constraints:** QP matrices dimensionally consistent.
+*   **Workspace:** NNLS buffers preallocated and initialized.
+
+##### 2. Postconditions (guaranteed on success)
+
+*   **Stationarity:**
+    $$ \| B d + g + A^T \lambda \|_\infty \le \text{acc} $$
+*   **Dual feasibility:** NNLS multipliers $\ge -w_{tol}$.
+*   **Primal feasibility (linearized constraints):** satisfied within `constr_viol_tol`.
+*   **Determinism:** Identical inputs yield identical `d` and `lambda_qp`.
+
+##### 3. Frame Conditions
+
+*   **Allowed to modify:** `ws.qp.d`, `ws.qp.lambda_qp`, internal NNLS buffers.
+*   **Forbidden to modify:** `ws.state.x`, `ws.state.rho`, `ws.hessian.B`.
+
+---
+
+#### D. Implementation Sketch (Julia)
+
+```julia
+const DEBUG_CONTRACTS = true  # Set to false for production builds
+
+@inline function contract_assert(cond::Bool, msg::String)
+    if DEBUG_CONTRACTS && !cond
+        error("Contract violation: " * msg)
+    end
+end
+
+function solve_qp_via_nnls!(ws)
+    # --- Preconditions ---
+    contract_assert(all(isfinite, ws.hessian.B), "Hessian contains NaN/Inf")
+    # Note: Use tolerance check for symmetry, not exact equality
+    contract_assert(norm(ws.hessian.B - ws.hessian.B', Inf) < ws.options.eps_rank, 
+                    "Hessian symmetry violated")
+    contract_assert(all(isfinite, ws.state.g), "Gradient contains NaN/Inf")
+
+    # --- Core Logic ---
+    qp_core_solve!(ws)
+
+    # --- Postconditions ---
+    if ws.qp_success
+        stationarity = ws.hessian.B * ws.qp.d +
+                       ws.state.g +
+                       ws.qp.A' * ws.qp.lambda_qp
+
+        contract_assert(
+            norm(stationarity, Inf) ≤ ws.options.acc,
+            "QP stationarity violated"
+        )
+    end
+end
+```
+
+Contracts must not alter solver behavior; they serve solely as verification guards.
+
+---
+
+### 0.4.5 – Determinism Contract (Binding)
+
+For strict reproduction under the Equivalence Axiom, the following rules are mandatory:
+
+*   **No** random pivoting (QR and factorizations must be deterministic).
+*   **No** `@fastmath`, `@simd`, or algebraic reordering that alters floating-point semantics.
+*   **No** hash-based containers in active-set logic.
+*   All tests executed with `BLAS.set_num_threads(1)`.
+
+Determinism is considered a structural property of the solver and is binding until Phase 5.
+
+---
+
+**Status:** Phase 0.4 finalized and specification-consistent with the Equivalence Axiom.
+
+
 
 # Phase 0.5 – Architecture Proposal 2.0 (Layered & Forensic)
 
